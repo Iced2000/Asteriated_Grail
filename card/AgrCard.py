@@ -18,7 +18,7 @@ class AgrCard(object):
 
 
     def isMagic(self):
-        pass
+        return self._type == "magic"
 
     def isAttack(self):
         return self._type == "attack"
@@ -26,11 +26,47 @@ class AgrCard(object):
     def forCounter(self, element):
         return (self.isAttack() and (self.isDark() or self._element == element)) or self.isLight()
 
+    def forMissileCounter(self):
+        return self.isMissile() or self.isLight()
+
     def isDark(self):
         return self._element == "darkness"
 
     def isLight(self):
         return self._element == "light"
+
+    def isNotLight(self):
+        return not self.isLight()
+
+    def isMagicAction(self):
+        return self.isMagic() and self.isNotLight()
+
+    def isWeak(self):
+        return self._name == "虛弱"
+
+    def isMissile(self):
+        return self._name == "魔彈"
+
+    def isShield(self):
+        return self._name == "聖盾"
+
+    def isPoison(self):
+        return self._name == "中毒"
+
+    def getMagicName(self):
+        if self.isLight():
+            return "light"
+        elif self.isWeak():
+            return "weak"
+        elif self.isMissile():
+            return "missile"
+        elif self.isShield():
+            return "shield"
+        elif self.isPoison():
+            return "poison"
+        else:
+            print("Invalid Type")
+            raise
 
     def getElement(self):
         return self._element

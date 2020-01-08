@@ -27,12 +27,12 @@ class AgrGame(object):
         self._playerNum = len(self._seat)
 
         for i in range(self._playerNum):
-            self.drawCards(num=4, harmed=False, _id=i)
+            self.drawCards(num=3, harmed=False, _id=i)
 
     def __str__(self):
-        return "blue_{}_{}_{}_{}_red_{}_{}_{}_{}".format(
-            self._blueGem, self._blueCrystal, self._blueMorale, self._blueGrail,
-            self._redGem, self._redCrystal, self._redMorale, self._redGrail)
+        return "blue\t\t\tred\n\tGem:{}\t\t\tGem:{}\n\tCrystal:{}\t\tCrystal:{}\n\tMorale:{}\t\tMorale:{}\n\tGrail:{}\t\t\tGrail:{}\n".format(
+            self._blueGem, self._redGem,self._blueCrystal, self._redCrystal, 
+            self._blueMorale, self._redMorale, self._blueGrail, self._redGrail,)
 
     def run(self):
         while(True):
@@ -44,9 +44,12 @@ class AgrGame(object):
             self._roundEndPhase(currPlayer)
             print()
 
-            self._currentPlayerID += 1
-            if self._currentPlayerID == self._playerNum:
-                self._currentPlayerID = 0
+            self._currentPlayerID = (self._currentPlayerID + 1) % self._playerNum
+
+    def gameEnd(self, isRed):
+        team = 'red' if isRed else 'blue'
+        print("Congratulation, {} team wins.".format(team))
+        exit(0)
 
     def drawCards(self, num, harmed, _id):
         overflow = self._seat[_id].addHandCards(self._pile.deal(num), harmed)
@@ -56,20 +59,37 @@ class AgrGame(object):
         else:
             return
 
-    def removeCards(self, playerID, cards, show):
+    def removeCards(self, playerID, cards, show, recycle):
         if show:
             pass
         else:
             pass
-        self._pile.recycle(cards)
+        if recycle:
+            self._pile.recycle(cards)
 
     def adjustMorale(self, num, isRed):
         if isRed:
             self._redMorale -= num
+            if self._redMorale <= 0:
+                self.gameEnd(False)
         else:
             self._blueMorale -= num
+            if self._blueMorale <= 0:
+                self.gameEnd(True)
+
+    def addAgrail(self,isRed):
+        if isRed:
+            self._redGrail += 1
+            if self._redGrail == 5:
+                self.gameEnd(True)
+        else:
+            self._blueGrail += 1
+            if self._blueGrail == 5:
+                self.gameEnd(False)
 
     def addJewel(self, gem, isRed):
+        if gem == None:
+            return
         if isRed:
             if self._redGem + self._redCrystal == 5:
                 return
@@ -82,6 +102,23 @@ class AgrGame(object):
             else:   self._blueCrystal += 1
         return
 
+    def delJewel(self, gem, isRed):
+        if isRed:
+            if gem: self._redGem -= 1
+            else:   self._redCrystal -= 1
+        else:
+            if gem: self._blueGem -= 1
+            else:   self._blueCrystal -= 1
+
+    def getJewel(self, isRed):
+        if isRed:
+            return self._redGem, self._redCrystal
+        else:
+            return self._blueGem, self._blueCrystal
+
+    def addBasicEffect(self, effectType, playerNo, card, frm):
+        self._seat[playerNo].addBasicEffect(effectType, card)
+
     def getPlayer(self):
         return self._seat
 
@@ -92,24 +129,39 @@ class AgrGame(object):
         player.beforeAction()
 
     def _actionPhase(self, player):
-        player.action(self._processAllowInfo(dict(), "getActionAllowInfo", player.getColor()))
+        player.action()
 
     def _roundEndPhase(self, player):
         player.roundEnd()
 
-    def _processAllowInfo(self, processedInfo, funcName, *args):
-        tmpInfo = getattr(self._seat[0], funcName)(*args)
-        for key in tmpInfo.keys():
-            processedInfo[key] = []
-            if tmpInfo[key]:
-                processedInfo[key].append(0)
+    def getCandidate(self, method, **kwargs):
+        candidate = []
+        if method == "missile":
+            frm = kwargs['frm']
+            to = (frm + 1) % self._playerNum
+            while self._seat[frm].getColor() == self._seat[to].getColor():
+                to = (to + 1) % self._playerNum
+            return [to]
 
-        for i in range(1, self._playerNum):
-            tmpInfo = getattr(self._seat[i], funcName)(*args)
-            for key in tmpInfo.keys():
-                if tmpInfo[key]:
-                    processedInfo[key].append(i)
-        return processedInfo
+        for playerNo in range(self._playerNum):
+            if method == "attack":
+                if self._seat[playerNo].allowAttack(self._seat[kwargs['frm']].getColor()):
+                    candidate.append(playerNo)
+            elif method == "counter":
+                if self._seat[playerNo].allowCounter(self._seat[kwargs['to']].getColor(), kwargs['frm']):
+                    candidate.append(playerNo)
+            elif method == "weak":
+                if self._seat[playerNo].allowWeak():
+                    candidate.append(playerNo)
+            elif method == "shield":
+                if self._seat[playerNo].allowShield():
+                    candidate.append(playerNo)
+            elif method == "poison":
+                if self._seat[playerNo].allowPoison():
+                    candidate.append(playerNo)
+            else:
+                raise
+        return candidate
 
     ##########################################################
 
@@ -128,9 +180,7 @@ class AgrGame(object):
     
     @respond("respondForAttackOrCounterLaunch")
     def attackOrCounter(self, info):
-        self._processAllowInfo(
-            info, "getCounterAllowInfo", 
-            self._seat[info["to"]].getColor(), info["from"])
+        info["counter"] = self.getCandidate("counter", to=info["to"], frm=info["from"])
 
         hit, counterInfo = self._seat[info["to"]].counter(info)
 
@@ -141,6 +191,19 @@ class AgrGame(object):
             if counterInfo is not None:
                 self.attackOrCounter(counterInfo)
 
+    def poison(self, info):
+        self.calculateDamage(info)
+    
+    def missile(self, info):
+        info["candidate"] = self.getCandidate("missile", frm=info["to"])
+        hit, passInfo = self._seat[info["to"]].missile(info)
+        if hit:
+            self.missileHit(info)
+        else:
+            self.missileMiss(info)
+            if passInfo is not None:
+                self.missile(passInfo)
+
     @respond("respondForAttackOrCounterHit")
     def attackOrCounterHit(self, info):
         self.addJewel(info["gem"], self._seat[info["from"]].getColor())
@@ -149,6 +212,15 @@ class AgrGame(object):
     @respond("respondForAttackOrCounterMiss")
     def attackOrCounterMiss(self, info):
         pass
+
+    #@respond("respondForAttackOrCounterHit")
+    def missileHit(self, info):
+        #self.addJewel(info["gem"], self._seat[info["from"]].getColor())
+        self.calculateDamage(info)
+
+    #@respond("respondForAttackOrCounterMiss")
+    def missileMiss(self, info):
+        info['value'] += 1
 
     ################################################
     @respond("respondForTimeLine3")
