@@ -32,7 +32,7 @@ class AgrCard(object):
     def isDark(self):
         return self._element == "darkness"
 
-    def isLight(self):
+    def isLight(self, element=None):
         return self._element == "light"
 
     def isNotLight(self):

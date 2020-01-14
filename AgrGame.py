@@ -38,10 +38,10 @@ class AgrGame(object):
         while(True):
             print(self)
             currPlayer = self._seat[self._currentPlayerID]
-            self._roundStartPhase(currPlayer)
-            self._beforeActionPhase(currPlayer)
-            self._actionPhase(currPlayer)
-            self._roundEndPhase(currPlayer)
+            self.__roundStartPhase(currPlayer)
+            self.__beforeActionPhase(currPlayer)
+            self.__actionPhase(currPlayer)
+            self.__roundEndPhase(currPlayer)
             print()
 
             self._currentPlayerID = (self._currentPlayerID + 1) % self._playerNum
@@ -110,7 +110,7 @@ class AgrGame(object):
             if gem: self._blueGem -= 1
             else:   self._blueCrystal -= 1
 
-    def getJewel(self, isRed):
+    def getTeamJewel(self, isRed):
         if isRed:
             return self._redGem, self._redCrystal
         else:
@@ -122,16 +122,16 @@ class AgrGame(object):
     def getPlayer(self):
         return self._seat
 
-    def _roundStartPhase(self, player):
+    def __roundStartPhase(self, player):
         player.roundStart()
 
-    def _beforeActionPhase(self, player):
+    def __beforeActionPhase(self, player):
         player.beforeAction()
 
-    def _actionPhase(self, player):
+    def __actionPhase(self, player):
         player.action()
 
-    def _roundEndPhase(self, player):
+    def __roundEndPhase(self, player):
         player.roundEnd()
 
     def getCandidate(self, method, **kwargs):
@@ -180,7 +180,7 @@ class AgrGame(object):
     
     @respond("respondForAttackOrCounterLaunch")
     def attackOrCounter(self, info):
-        info["counter"] = self.getCandidate("counter", to=info["to"], frm=info["from"])
+        info["candidate"] = self.getCandidate("counter", to=info["to"], frm=info["from"])
 
         hit, counterInfo = self._seat[info["to"]].counter(info)
 

@@ -5,68 +5,74 @@ SYN = 300
 
 class BasePlayer(object):
 
-    def __init__(self, _gameEngine, _id, _isRed):
-        self._id = _id
-        self._gameEngine = _gameEngine
-        self._isRed = _isRed
-        self._heal = 0
-        self._gem = 0
-        self._crystal = 0
-        self._cards = []
-        self._maxCards = 6
-        self._maxJewels = 3
-        self._basicEffect = {
+    def __init__(self, gameEngine, idx, isRed):
+        self.__id = idx
+        self.__gameEngine = gameEngine
+        self.__isRed = isRed
+        self.__ATK = 2
+        self.__heal = 0
+        self.__gem = 0
+        self.__crystal = 0
+        self.__cards = []
+        self.__maxCards = 6
+        self.__maxJewels = 3
+        self.__basicEffect = {
             "weak": [],
             "shield": [],
             "poison": [],
         }
-        self._generalAction = 0
-        self._attackAction = 0
-        self._magicAction = 0
-        self._specialAction = 0
+        self.__generalAction = 0
+        self.__attackAction = 0
+        self.__magicAction = 0
+        self.__specialAction = 0
 
-        self._roundSkip = False
+        self.__roundSkip = False
 
     def __str__(self):
         return "Player {}\n\tGem:{} Crystal:{}\n\tWeak:{} Shield:{} Poison:{}\n\tHeal:{}".format(
-            self.getId(), self._gem, self._crystal, len(self._basicEffect["weak"]), 
-            len(self._basicEffect["shield"]), len(self._basicEffect["poison"]), self._heal)
+            self.getId(), self.__gem, self.__crystal, len(self.__basicEffect["weak"]), 
+            len(self.__basicEffect["shield"]), len(self.__basicEffect["poison"]), self.__heal)
+
+    def printHandCards(self):
+        print(self)
+        print("Player {}'s Hand cards:".format(self.getId()))
+        for ca in self.__cards: print(ca)
 
     def addHandCards(self, cards, harmed):
-        self._cards.extend(cards)
-        removeNum = len(self._cards) - self._maxCards
+        self.__cards.extend(cards)
+        removeNum = len(self.__cards) - self.__maxCards
         if removeNum > 0:
             tmpNo = []
-            self._printHandCards()
+            self.printHandCards()
             for i in range(removeNum):
                 dis = int(input("discard: "))
-                assert(dis in range(len(self._cards)))
+                assert(dis in range(len(self.__cards)))
                 tmpNo.append(dis)
             self.removeHandCards(tmpNo, show=False)
         return removeNum
 
     def removeHandCards(self, discardNum, show, recycle=True):
-        discards = [v for i,v in enumerate(self._cards) if i in discardNum]
-        self._cards = [v for i,v in enumerate(self._cards) if i not in discardNum]
-        self._gameEngine.removeCards(self.getId(), discards, show, recycle)
+        discards = [v for i,v in enumerate(self.__cards) if i in discardNum]
+        self.__cards = [v for i,v in enumerate(self.__cards) if i not in discardNum]
+        self.__gameEngine.removeCards(self.getId(), discards, show, recycle)
 
     def getId(self):
-        return self._id
+        return self.__id
 
     def getColor(self):
-        return self._isRed
+        return self.__isRed
 
     def allowAttack(self, teamColor):
-        return teamColor != self._isRed
+        return teamColor != self.getColor()
 
     def allowCounter(self, teamColor, prevID):
-        return teamColor != self._isRed and prevID != self._id
+        return teamColor != self.getColor() and prevID != self.getId()
 
     def allowWeak(self):
-        return len(self._basicEffect["weak"]) == 0
+        return len(self.__basicEffect["weak"]) == 0
 
     def allowShield(self):
-        return len(self._basicEffect["shield"]) == 0
+        return len(self.__basicEffect["shield"]) == 0
 
     def allowPoison(self):
         return True
@@ -75,162 +81,47 @@ class BasePlayer(object):
         pass
 
     def beforeAction(self):
-        if self._basicEffect["poison"]:
-            info = self.createInfo(
-                "magic", None,
-                self.getId(), None,
-                len(self._basicEffect["poison"]), None
-            )
-            self._gameEngine.removeCards(self.getId(), 
-                self._basicEffect["poison"].copy(), False, True)
-            self._basicEffect["poison"] = []
-            self._gameEngine.poison(info)
-
-        if self._basicEffect["weak"]:
-            self._gameEngine.removeCards(self.getId(), 
-                [self._basicEffect["weak"].pop()], False, True)
-            ps = input("Weak! Pass or not?[Y/N]")
-            if ps == 'Y':
-                self._roundSkip = True
-            else:
-                self._gameEngine.drawCards(3, True, self.getId())
-
+        self.__checkPoison()
+        self.__checkWeak()
+        
     def action(self):
-        if not self._roundSkip:
-            self._generalAction = 1
-        while(self._generalAction + self._attackAction + self._magicAction + self._specialAction):
-            if self._generalAction:
-                avail = self._getAvailCards("isNotLight")
-                availSP = self._getAvailSP()
-            elif self._attackAction:
-                avail = self._getAvailCards("isAttack")
-            elif self._magicAction:
-                avail = self._getAvailCards("isMagicAction")
+        self.__generalAction = 1 if not self.__roundSkip else 0
+        
+        while self.__generalAction + self.__attackAction + self.__magicAction + self.__specialAction:
+
+            if self.__generalAction:
+                availCard, availMagic, availSP = self.__getAvailCards("isNotLight"), self.__getAvailMagic(), self.__getAvailSP()
+            elif self.__attackAction:
+                availCard, availMagic, availSP = self.__getAvailCards("isAttack"), [], []
+            elif self.__magicAction:
+                availCard, availMagic, availSP = self.__getAvailCards("isMagicAction"), self.__getAvailMagic(), []
             else:
-                availSP = self._getAvailSP()
+                availCard, availMagic, availSP = [], [], self.__getAvailSP()
 
-            print("Available Cards:{}\nAvailable Special:{}".format(str(avail), str(availSP)))
+            print("Available Cards:{}\nAvailable Special:{}".format(str(availCard), str(availSP)))
             actNum = int(input("Action:"))
-            if actNum in avail:
-                if self._cards[actNum].isAttack():
-                    actionType = "attack"
-                elif self._cards[actNum].isMagicAction():
-                    actionType = self._cards[actNum].getMagicName()
-                else:
-                    raise
 
-                candidate = self._gameEngine.getCandidate(actionType, frm=self.getId())
-                target = int(input("target" + str(candidate) + ": "))
-                if target in candidate:
-                    if self._cards[actNum].isAttack():
-                        self.attack(actNum, target)
-                    else:
-                        self.basicMagic(actNum, target, actionType)
-                else:
-                    print("restart")
-                    continue
+            if actNum in availCard and self.__cards[actNum].isAttack():
+                self.__attack(actNum)
+            elif actNum in availCard:
+                self.__basicMagic(actNum)
             elif actNum in availSP:
-                self._special(actNum)
+                self.__special(actNum)
+            elif actNum in availMagic:
+                self.__magic(actNum)
             else:
                 raise
 
-    def attack(self, cardNum, target):
-        if self._generalAction > 0:
-            self._generalAction -= 1
-        elif self._attackAction > 0:
-            self._attackAction -= 1
-        else:
-            print("No attack action left!")
-            raise
-        element = self._cards[cardNum].getElement()
-        info = self.createInfo(
-                "attack", self.getId(),
-                target, element, 2, True)
-        self.removeHandCards([cardNum], True)
-        self._gameEngine.attackOrCounter(info)
-
-    def basicMagic(self, cardNum, target, actionType):
-        if self._generalAction > 0:
-            self._generalAction -= 1
-        elif self._magicAction > 0:
-            self._magicAction -= 1
-        else:
-            print("No magic action left!")
-            raise
-
-        if actionType == "weak" or actionType == "shield" or actionType == "poison":
-            self._gameEngine.addBasicEffect(actionType, target, self._cards[cardNum], self.getId())
-            self.removeHandCards([cardNum], True, recycle=False)
-        elif actionType == "missile":
-            info = self.createInfo(
-                "magic", self.getId(),
-                target, self._cards[cardNum].getElement(),
-                2, None
-            )
-            self.removeHandCards([cardNum], True)
-            self._gameEngine.missile(info)
-        else:
-            raise
-
-
-    def _special(self, actionType):
-        if self._generalAction > 0:
-            self._generalAction -= 1
-        elif self._specialAction > 0:
-            self._specialAction -= 1
-        else:
-            print("No special action left!")
-            raise
-
-        teamGem, teamCrystal = self._gameEngine.getJewel(self.getColor())
-        if actionType == TAKE:
-            maxTake = self._maxJewels - self._gem - self._crystal
-            gem, crystal = 0, 0
-            while (gem+crystal) > 2 or (gem+crystal) <= 0 or \
-                    (gem+crystal) > maxTake or gem > teamGem or crystal > teamCrystal:
-                print("TeamGem:{}, TeamCrystal:{}, Max Take:{}".format(teamGem, teamCrystal, maxTake, 2))
-                gem = int(input("No. of Gem:"))
-                crystal = int(input("No. of Cry:"))
-            for i in range(gem):
-                self._gem += 1
-                self._gameEngine.delJewel(True, self.getColor())
-            for i in range(crystal):
-                self._crystal += 1
-                self._gameEngine.delJewel(False, self.getColor())
-
-        elif actionType == BUY:
-            self._gameEngine.drawCards(3, True, self.getId())
-            self._gameEngine.addJewel(True, self.getColor())
-            self._gameEngine.addJewel(False, self.getColor())
-
-        elif actionType == SYN:
-            self._gameEngine.drawCards(3, True, self.getId())
-            gem, crystal = 0, 0
-            while (gem+crystal) != 3 or gem > teamGem or crystal > teamCrystal:
-                print("TeamGem:{}, TeamCrystal:{}".format(teamGem, teamCrystal))
-                gem = int(input("No. of Gem:"))
-                crystal = int(input("No. of Cry:"))
-            for i in range(gem):
-                self._gameEngine.delJewel(True, self.getColor())
-            for i in range(crystal):
-                self._gameEngine.delJewel(False, self.getColor())
-            self._gameEngine.addAgrail(self.getColor())
-        else:
-            raise
-
     def roundEnd(self):
-        if self._roundSkip:
-            self._roundSkip = False
-        else:
-            pass
+        self.__roundSkip = False
 
     def addBasicEffect(self, effectType, card):
         if effectType == "weak":
-            self._basicEffect["weak"].append(card)
+            self.__basicEffect["weak"].append(card)
         elif effectType == "shield":
-            self._basicEffect["shield"].append(card)
+            self.__basicEffect["shield"].append(card)
         elif effectType == "poison":
-            self._basicEffect["poison"].append(card)
+            self.__basicEffect["poison"].append(card)
         else:
             raise
 
@@ -238,87 +129,238 @@ class BasePlayer(object):
         """return hit, counterInfo"""
         if info["counterable"] == 2:
             return True, None
-        elif info["counterable"] == 1:
-            avail = self._getAvailCards("forCounter", info["element"])
-            cardNum = int(input("Avail " + str(avail) + ": "))
-            if cardNum in avail:
-                element = self._cards[cardNum].getElement()
+        elif info["counterable"] in [0, 1]:
+            cardType = "forCounter" if info["counterable"] == 1 else "isLight"
+            availCard = self.__getAvailCards(cardType, info["element"])
+            cardNum = int(input("Avail " + str(availCard) + ": "))
 
-                if element == "light":
-                    self.removeHandCards([cardNum], True)
-                    return False, None
-                    
-                target = int(input("target" + str(info["counter"]) + ": "))
-                assert(target in info["counter"])
+            if cardNum in availCard:
+                if self.__cards[cardNum].getElement() == "light":
+                    counterInfo = None
+                else:
+                    target = int(input("target" + str(info["candidate"]) + ": "))
+                    assert(target in info["candidate"])
 
-                counterInfo = self.createInfo(
-                    "counter", self.getId(), 
-                    target, element, 2, False)
-                self.removeHandCards([cardNum], True)
+                    counterInfo = self.__createInfo(
+                        typ = "counter",
+                        frm = self.getId(),
+                        to = target,
+                        element = self.__cards[cardNum].getElement(), 
+                        value = 2,
+                        gem = False,
+                    )
+                self.removeHandCards([cardNum], show=True)
                 return False, counterInfo
             else:
-                return self.checkShield(), None
+                return self.__checkShield(), None
         else:
-            avail = self._getAvailCards("isLight")
-            cardNum = int(input("light " + str(avail) + ": "))
-            if cardNum in avail:
-                self.removeHandCards([cardNum], True)
-                return False, None
-            else:
-                return self.checkShield(), None
+            raise
 
     def missile(self, info):
-        avail = self._getAvailCards("forMissileCounter")
-        cardNum = int(input("Avail " + str(avail) + ": "))
-        if cardNum in avail:
-            element = self._cards[cardNum].getElement()
+        availCard = self.__getAvailCards("forMissileCounter")
+        cardNum = int(input("Avail " + str(availCard) + ": "))
+        if cardNum in availCard:
+            if self.__cards[cardNum].getElement() == "light":
+                missileInfo = None
+            else:
+                target = int(input("target" + str(info["candidate"]) + ": "))
+                assert(target in info["candidate"])
 
-            if element == "light":
-                self.removeHandCards([cardNum], True)
-                return False, None
-                
-            target = int(input("target" + str(info["candidate"]) + ": "))
-            assert(target in info["candidate"])
-
-            missileInfo = self.createInfo(
-                "magic", self.getId(),
-                target, element,
-                info["value"], None)
+                missileInfo = self.__createInfo(
+                    typ = "magic",
+                    frm = self.getId(),
+                    to = target,
+                    element = self.__cards[cardNum].getElement(), 
+                    value = info["value"],
+                    gem = None,
+                )
             self.removeHandCards([cardNum], True)
             return False, missileInfo
         else:
-            return self.checkShield(), None
+            return self.__checkShield(), None
 
-    def _getAvailCards(self, funcName, *arg, **kwarg):
-        self._printHandCards()
+    def useHeal(self, info):
+        if self.__heal:
+            maxHeal = min(info["value"], self.__heal, info["healable"])
+            print("max healable:", maxHeal)
+            healNum = int(input("use heal: "))
+            assert(healNum<=maxHeal and healNum>=0)
+            info["value"] -= healNum
+            self.__heal -= healNum
+        else:
+            return
+
+    def __checkPoison(self):
+        if self.__basicEffect["poison"]:
+            info = self.__createInfo(
+                typ = "magic",
+                frm = None,
+                to = self.getId(),
+                element = None, 
+                value = len(self.__basicEffect["poison"]),
+                gem = None,
+            )
+            self.__gameEngine.removeCards(self.getId(), 
+                self.__basicEffect["poison"], False, True)
+            self.__basicEffect["poison"] = []
+            self.__gameEngine.poison(info)
+
+    def __checkWeak(self):
+        if self.__basicEffect["weak"]:
+            self.__gameEngine.removeCards(self.getId(), 
+                self.__basicEffect["weak"], False, True)
+            self.__basicEffect["weak"] = []
+            ps = input("Weak! Pass or not?[Y/N]")
+            if ps == 'Y':
+                self.__roundSkip = True
+            else:
+                self.__gameEngine.drawCards(3, True, self.getId())
+
+    def __getAvailCards(self, funcName, *arg, **kwarg):
+        self.printHandCards()
         avail = []
-        for i in range(len(self._cards)):
-            if getattr(self._cards[i], funcName)(*arg, **kwarg):
+        for i in range(len(self.__cards)):
+            if getattr(self.__cards[i], funcName)(*arg, **kwarg):
                 avail.append(i)
         return avail
 
-    def _getAvailSP(self):
+    def __getAvailSP(self):
         availSP = []
-        teamGem, teamCrystal = self._gameEngine.getJewel(self.getColor())
-        if (teamGem or teamCrystal) and ((self._gem + self._crystal) < self._maxJewels):
+        teamGem, teamCrystal = self.__gameEngine.getTeamJewel(self.getColor())
+        if (teamGem or teamCrystal) and ((self.__gem + self.__crystal) < self.__maxJewels):
             availSP.append(TAKE)
-        if (self._maxCards - len(self._cards)) >= 3:
+        if (self.__maxCards - len(self.__cards)) >= 3:
             availSP.append(BUY)
             if (teamGem + teamCrystal) >= 3:
                 availSP.append(SYN)
         return availSP
 
-    def checkShield(self):
+    def __getAvailMagic(self):
+        return []
+
+    def __attack(self, cardNum):
+        candidate = self.__gameEngine.getCandidate("attack", frm=self.getId())
+        target = int(input("target" + str(candidate) + ": "))
+
+        if target in candidate:
+            if self.__generalAction > 0:
+                self.__generalAction -= 1
+            elif self.__attackAction > 0:
+                self.__attackAction -= 1
+            else:
+                raise
+            info = self.__createInfo(
+                        typ = "attack",
+                        frm = self.getId(),
+                        to = target,
+                        element = self.__cards[cardNum].getElement(), 
+                        value = self.__ATK,
+                        gem = True,
+                    )
+            self.removeHandCards([cardNum], show=True)
+            self.__gameEngine.attackOrCounter(info)
+        else:
+            print("restart")
+
+    def __basicMagic(self, cardNum):
+        magicType = self.__cards[cardNum].getMagicName()
+        candidate = self.__gameEngine.getCandidate(magicType, frm=self.getId())
+        target = int(input("target" + str(candidate) + ": "))
+
+        if target in candidate:
+            if self.__generalAction > 0:
+                self.__generalAction -= 1
+            elif self.__magicAction > 0:
+                self.__magicAction -= 1
+            else:
+                raise
+
+            if magicType in ["weak", "shield", "poison"]:
+                self.__gameEngine.addBasicEffect(magicType, target, self.__cards[cardNum], self.getId())
+                self.removeHandCards([cardNum], show=True, recycle=False)
+
+            elif magicType == "missile":
+                info = self.__createInfo(
+                    typ = "magic",
+                    frm = self.getId(),
+                    to = target,
+                    element = self.__cards[cardNum].getElement(), 
+                    value = 2,
+                    gem = None,
+                )
+                self.removeHandCards([cardNum], True)
+                self.__gameEngine.missile(info)
+            else:
+                raise
+        else:
+            print("restart")
+
+    def __special(self, spType):
+        if self.__generalAction > 0:
+            self.__generalAction -= 1
+        elif self.__specialAction > 0:
+            self.__specialAction -= 1
+        else:
+            raise
+
+        if spType == TAKE:
+            self.__specialTake()
+        elif spType == BUY:
+            self.__specialBuy()
+        elif spType == SYN:
+            self.__specialSyn()
+        else:
+            raise
+
+    def __specialTake(self):
+        teamGem, teamCrystal = self.__gameEngine.getTeamJewel(self.getColor())
+        maxTake = self.__maxJewels - self.__gem - self.__crystal
+        gem, crystal = 0, 0
+        while (gem+crystal) > 2 or (gem+crystal) <= 0 or \
+                (gem+crystal) > maxTake or gem > teamGem or crystal > teamCrystal:
+            print("TeamGem:{}, TeamCrystal:{}, Max Take:{}".format(teamGem, teamCrystal, maxTake, 2))
+            gem = int(input("No. of Gem:"))
+            crystal = int(input("No. of Cry:"))
+        for i in range(gem):
+            self.__gem += 1
+            self.__gameEngine.delJewel(gem=True, isRed=self.getColor())
+        for i in range(crystal):
+            self.__crystal += 1
+            self.__gameEngine.delJewel(gem=False, isRed=self.getColor())
+
+    def __specialBuy(self):
+        self.__gameEngine.drawCards(3, True, self.getId())
+        self.__gameEngine.addJewel(True, self.getColor())
+        self.__gameEngine.addJewel(False, self.getColor())
+
+    def __specialSyn(self):
+        teamGem, teamCrystal = self.__gameEngine.getTeamJewel(self.getColor())
+        self.__gameEngine.drawCards(3, True, self.getId())
+        gem, crystal = 0, 0
+        while (gem+crystal) != 3 or gem > teamGem or crystal > teamCrystal:
+            print("TeamGem:{}, TeamCrystal:{}".format(teamGem, teamCrystal))
+            gem = int(input("No. of Gem:"))
+            crystal = int(input("No. of Cry:"))
+        for i in range(gem):
+            self.__gameEngine.delJewel(True, self.getColor())
+        for i in range(crystal):
+            self.__gameEngine.delJewel(False, self.getColor())
+        self.__gameEngine.addAgrail(self.getColor())
+
+    def __magic(self):
+        raise
+
+    def __checkShield(self):
         """return hit or not"""
-        if len(self._basicEffect["shield"]) != 0:
-            self._gameEngine.removeCards(self.getId(), [self._basicEffect["shield"].pop()], False, True)
+        if len(self.__basicEffect["shield"]) != 0:
+            self.__gameEngine.removeCards(self.getId(), [self.__basicEffect["shield"].pop()], False, True)
             return False
         else:
             return True
 
-    def createInfo(self, _type, frm, to, element, value, gem, healable=1e5):
+    def __createInfo(self, typ, frm, to, element, value, gem, healable=1e5):
         Info = {
-            "type": _type,
+            "type": typ,
             "from": frm,
             "to": to,
             "element": element,
@@ -328,22 +370,6 @@ class BasePlayer(object):
             "healable": healable
         }
         return Info
-
-    def useHeal(self, info):
-        if self._heal:
-            maxHeal = min(info["value"], self._heal, info["healable"])
-            print("max healable:", maxHeal)
-            healNum = int(input("use heal: "))
-            assert(healNum<=maxHeal and healNum>=0)
-            info["value"] -= healNum
-            self._heal -= healNum
-        else:
-            return
-
-    def _printHandCards(self):
-        print(self)
-        print("Player {}'s Hand cards:".format(self.getId()))
-        for ca in self._cards: print(ca)
 
     #############################################
     def respondForAttackOrCounterLaunch(self, info):
