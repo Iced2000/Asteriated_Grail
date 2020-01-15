@@ -1,9 +1,11 @@
-import player
+import character
 import card
+from utils import Respond
 
 class AgrGame(object):
     def __init__(self):
         self._pile = card.AgrCardCollection("card/cardDB.txt")
+        self._respond = Respond()
 
         self._blueGem = 0
         self._blueCrystal = 0
@@ -16,18 +18,19 @@ class AgrGame(object):
         self._redGrail = 0
         
         self._seat = {
-            0: player.BasePlayer(self, 0, True),
-            1: player.BasePlayer(self, 1, False),
-            2: player.BasePlayer(self, 2, True),
-            3: player.BasePlayer(self, 3, True),
-            4: player.BasePlayer(self, 4, False),
-            5: player.BasePlayer(self, 5, False),
+            0: character.JianSheng(self, self._respond, 0, True),
+            1: character.BasePlayer(self, self._respond, 1, False),
+            2: character.BasePlayer(self, self._respond, 2, True),
+            3: character.BasePlayer(self, self._respond, 3, True),
+            4: character.BasePlayer(self, self._respond, 4, False),
+            5: character.BasePlayer(self, self._respond, 5, False),
         }
+        self._respond.sortAll()
         self._currentPlayerID = 0
         self._playerNum = len(self._seat)
 
         for i in range(self._playerNum):
-            self.drawCards(num=3, harmed=False, _id=i)
+            self.drawCards(num=4, harmed=False, _id=i)
 
     def __str__(self):
         return "blue\t\t\tred\n\tGem:{}\t\t\tGem:{}\n\tCrystal:{}\t\tCrystal:{}\n\tMorale:{}\t\tMorale:{}\n\tGrail:{}\t\t\tGrail:{}\n".format(
@@ -169,16 +172,14 @@ class AgrGame(object):
         def outer_d_f(f):
             def d_f(self, *args, **kwargs):
                 if order:
-                    for playerNo in range(self._playerNum):
-                        getattr(self._seat[playerNo], funcName)(*args, **kwargs)
+                    getattr(self._respond, funcName)(*args, **kwargs)
                 f(self, *args, **kwargs)
                 if not order:
-                    for playerNo in range(self._playerNum):
-                        getattr(self._seat[playerNo], funcName)(*args, **kwargs)
+                    getattr(self._respond, funcName)(*args, **kwargs)
             return d_f
         return outer_d_f
     
-    @respond("respondForAttackOrCounterLaunch")
+    @respond("respondTimeLine1")
     def attackOrCounter(self, info):
         info["candidate"] = self.getCandidate("counter", to=info["to"], frm=info["from"])
 
@@ -204,12 +205,12 @@ class AgrGame(object):
             if passInfo is not None:
                 self.missile(passInfo)
 
-    @respond("respondForAttackOrCounterHit")
+    #@respond("respondForAttackOrCounterHit")
     def attackOrCounterHit(self, info):
         self.addJewel(info["gem"], self._seat[info["from"]].getColor())
         self.calculateDamage(info)
 
-    @respond("respondForAttackOrCounterMiss")
+    #@respond("respondForAttackOrCounterMiss")
     def attackOrCounterMiss(self, info):
         pass
 
@@ -223,20 +224,20 @@ class AgrGame(object):
         info['value'] += 1
 
     ################################################
-    @respond("respondForTimeLine3")
+    #@respond("respondForTimeLine3")
     def calculateDamage(self, info):
         self.askForHeal(info)
 
-    @respond("respondForTimeLine4")
+    #@respond("respondForTimeLine4")
     def askForHeal(self, info):
         self._seat[info["to"]].useHeal(info)
         self.calculateTotalDamage(info)
 
-    @respond("respondForTimeLine5")
+    #@respond("respondForTimeLine5")
     def calculateTotalDamage(self, info):
         self.getDamage(info)
 
-    @respond("respondForTimeLine6", False)
+    #@respond("respondForTimeLine6", False)
     def getDamage(self, info):
         self.drawCards(info["value"], True, info["to"])
 

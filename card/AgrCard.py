@@ -35,6 +35,12 @@ class AgrCard(object):
     def isLight(self, element=None):
         return self._element == "light"
 
+    def isWind(self):
+        return self._element == "wind"
+
+    def isWindAttack(self):
+        return self.isWind() and self.isAttack()
+
     def isNotLight(self):
         return not self.isLight()
 
@@ -71,4 +77,10 @@ class AgrCard(object):
     def getElement(self):
         return self._element
 
-        
+    ########### unique skills #############
+
+    def isJiFengJi(self):
+        return "疾風技" in [self._uniq1, self._uniq2]
+
+    def isLieFengJi(self):
+        return "烈風技" in [self._uniq1, self._uniq2]
