@@ -3,7 +3,7 @@ from .BasePlayer import BasePlayer
 class JianSheng(BasePlayer):
     def __init__(self, gameEngine, respond, idx, isRed):
         super(JianSheng, self).__init__(gameEngine, respond, idx, isRed)
-        self.__skillReset()
+        self._skillReset()
         self._respond.addTimeLine1(self, "JiFengJi")
         self._respond.addTimeLine1(self, "LieFengJi")
         self._respond.addTimeLine1(self, "ShengJian")
@@ -58,7 +58,7 @@ class JianSheng(BasePlayer):
             elif actNum == 2000:
                 self.JianYin()
     
-    def __skillReset(self):
+    def _skillReset(self):
         self.__attNum = 0
         self.__FengNuUsed = False
         self.__JianYinUsed = False
