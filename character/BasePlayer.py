@@ -1,6 +1,4 @@
-TAKE = 100
-BUY = 200
-SYN = 300
+from .utils import *
 
 class BasePlayer(object):
 
@@ -11,7 +9,7 @@ class BasePlayer(object):
         self._isRed = isRed
         self._ATK = 2
         self._heal = 0
-        self._gem = 0
+        self._gem = 1
         self._crystal = 0
         self._cards = []
         self._maxCards = 6
@@ -42,16 +40,14 @@ class BasePlayer(object):
         self._cards.extend(cards)
         removeNum = len(self._cards) - self._maxCards
         if removeNum > 0:
-            tmpNo = []
             self.printHandCards()
-            for i in range(removeNum):
-                dis = int(input("discard: "))
-                assert(dis in range(len(self._cards)))
-                tmpNo.append(dis)
+            _, tmpNo = askSelection("discard: ", range(len(self._cards)), removeNum)
             self.removeHandCards(tmpNo, show=False)
         return removeNum
 
     def removeHandCards(self, discardNum, show, recycle=True):
+        discardNum = discardNum if isinstance(discardNum, list) else [discardNum]
+
         discards = [v for i,v in enumerate(self._cards) if i in discardNum]
         self._cards = [v for i,v in enumerate(self._cards) if i not in discardNum]
         self._gameEngine.removeCards(self.getId(), discards, show, recycle)
@@ -73,6 +69,18 @@ class BasePlayer(object):
 
     def getColor(self):
         return self._isRed
+
+    def getHeal(self):
+        return self._heal
+
+    def getHandCardNum(self):
+        return len(self._cards)
+
+    def checkJewel(self, gem, crystal, force=False):
+        if force:
+            return self._gem >= gem and self._crystal >= crystal
+        else:
+            return self._gem >= gem and (self._gem + self._crystal) >= (gem + crystal)
 
     def allowAttack(self, teamColor):
         return teamColor != self.getColor()
@@ -113,8 +121,7 @@ class BasePlayer(object):
             else:
                 availCard, availMagic, availSP = [], [], self._getAvailSP()
 
-            print("Available Cards:{}\nAvailable Special:{}".format(str(availCard), str(availSP)))
-            actNum = int(input("Action:"))
+            _, actNum = askSelection("Action:", availCard+availMagic+availSP, 1)
 
             if actNum in availCard and self._cards[actNum].isAttack():
                 self._attack(actNum)
@@ -148,15 +155,13 @@ class BasePlayer(object):
         elif info["counterable"] in [0, 1]:
             cardType = "forCounter" if info["counterable"] == 1 else "isLight"
             availCard = self._getAvailCards(cardType, info["card"].getElement())
-            cardNum = int(input("Avail " + str(availCard) + ": "))
+            inAvail, cardNum = askSelection("Card:", availCard, 1, allowOutOfIdx=True)
 
-            if cardNum in availCard:
+            if inAvail:
                 if self._cards[cardNum].getElement() == "light":
                     counterInfo = None
                 else:
-                    target = int(input("target" + str(info["candidate"]) + ": "))
-                    assert(target in info["candidate"])
-
+                    _, target = askSelection("target:", info["candidate"], 1)
                     counterInfo = self._createInfo(
                         typ = "counter",
                         frm = self.getId(),
@@ -174,14 +179,12 @@ class BasePlayer(object):
 
     def missile(self, info):
         availCard = self._getAvailCards("forMissileCounter")
-        cardNum = int(input("Avail " + str(availCard) + ": "))
-        if cardNum in availCard:
+        inAvail, cardNum = askSelection("Card:", availCard, 1, allowOutOfIdx=True)
+        if inAvail:
             if self._cards[cardNum].getElement() == "light":
                 missileInfo = None
             else:
-                target = int(input("target" + str(info["candidate"]) + ": "))
-                assert(target in info["candidate"])
-
+                _, target = askSelection("target:", info["candidate"], 1)
                 missileInfo = self._createInfo(
                     typ = "magic",
                     frm = self.getId(),
@@ -198,9 +201,7 @@ class BasePlayer(object):
     def useHeal(self, info):
         if self._heal:
             maxHeal = min(info["value"], self._heal, info["healable"])
-            print("max healable:", maxHeal)
-            healNum = int(input("use heal: "))
-            assert(healNum<=maxHeal and healNum>=0)
+            healNum = askRange("Use heal:", 0, maxHeal)
             info["value"] -= healNum
             self._heal -= healNum
         else:
@@ -219,15 +220,15 @@ class BasePlayer(object):
             self._gameEngine.removeCards(self.getId(), 
                 self._basicEffect["poison"], False, True)
             self._basicEffect["poison"] = []
-            self._gameEngine.poison(info)
+            self._gameEngine.calculateDamage(info)
 
     def _checkWeak(self):
         if self._basicEffect["weak"]:
             self._gameEngine.removeCards(self.getId(), 
                 self._basicEffect["weak"], False, True)
             self._basicEffect["weak"] = []
-            ps = input("Weak! Pass or not?[Y/N]")
-            if ps == 'Y':
+
+            if askBinary("Weak! Pass "):
                 self._roundSkip = True
             else:
                 self._gameEngine.drawCards(3, True, self.getId())
@@ -256,9 +257,9 @@ class BasePlayer(object):
 
     def _attack(self, cardNum):
         candidate = self._gameEngine.getCandidate("attack", frm=self.getId())
-        target = int(input("target" + str(candidate) + ": "))
+        inCandi, target = askSelection("target:", candidate, 1, allowOutOfIdx=True)
 
-        if target in candidate:
+        if inCandi:
             if self._generalAction > 0:
                 self._generalAction -= 1
             elif self._attackAction > 0:
@@ -286,9 +287,9 @@ class BasePlayer(object):
     def _basicMagic(self, cardNum):
         magicType = self._cards[cardNum].getMagicName()
         candidate = self._gameEngine.getCandidate(magicType, frm=self.getId())
-        target = int(input("target" + str(candidate) + ": "))
+        inCandi, target = askSelection("target:", candidate, 1, allowOutOfIdx=True)
 
-        if target in candidate:
+        if inCandi:
             if self._generalAction > 0:
                 self._generalAction -= 1
             elif self._magicAction > 0:
@@ -373,8 +374,13 @@ class BasePlayer(object):
             self._gameEngine.delJewel(False, self.getColor())
         self._gameEngine.addAgrail(self.getColor())
 
-    def _magic(self):
-        raise
+    def _magic(self, magicNum):
+        if self._generalAction > 0:
+            self._generalAction -= 1
+        elif self._magicAction > 0:
+            self._magicAction -= 1
+        else:
+            raise
 
     def _checkShield(self, shieldable=True):
         """return hit or not"""
@@ -392,7 +398,7 @@ class BasePlayer(object):
             "from": frm,
             "to": to,
             "card": card,
-            "counterable": 0 if card.isDark() else 1, # force = 2
+            "counterable": 0 if card and card.isDark() else 1, # force = 2
             "value": value,
             "gem": gem,
             "healable": healable,

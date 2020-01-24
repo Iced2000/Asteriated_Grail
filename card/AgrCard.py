@@ -38,6 +38,9 @@ class AgrCard(object):
     def isWind(self):
         return self._element == "wind"
 
+    def isThunder(self):
+        return self._element == "thunder"
+
     def isWindAttack(self):
         return self.isWind() and self.isAttack()
 
@@ -79,8 +82,20 @@ class AgrCard(object):
 
     ########### unique skills #############
 
-    def isJiFengJi(self):
+    def isFastWind(self):
         return "疾風技" in [self._uniq1, self._uniq2]
 
-    def isLieFengJi(self):
+    def isHardWind(self):
         return "烈風技" in [self._uniq1, self._uniq2]
+
+    def isBloodSword(self):
+        return "血影狂刀" in [self._uniq1, self._uniq2]
+
+    def isBloodRoar(self):
+        return "血腥咆哮" in [self._uniq1, self._uniq2]
+
+    def isAccurateShot(self):
+        return "精准射擊" in [self._uniq1, self._uniq2]
+
+    def isFlashTrap(self):
+        return "閃光陷阱" in [self._uniq1, self._uniq2]

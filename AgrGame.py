@@ -1,11 +1,11 @@
 import character
 import card
-from utils import Respond
+import Respond
 
 class AgrGame(object):
     def __init__(self):
         self._pile = card.AgrCardCollection("card/cardDB.txt")
-        self._respond = Respond()
+        self._respond = Respond.Respond()
 
         self._blueGem = 0
         self._blueCrystal = 0
@@ -18,7 +18,7 @@ class AgrGame(object):
         self._redGrail = 0
         
         self._seat = {
-            0: character.JianSheng(self, self._respond, 0, True),
+            0: character.BowGoddess(self, self._respond, 0, True),
             1: character.BasePlayer(self, self._respond, 1, False),
             2: character.BasePlayer(self, self._respond, 2, True),
             3: character.BasePlayer(self, self._respond, 3, True),
@@ -162,6 +162,9 @@ class AgrGame(object):
             elif method == "poison":
                 if self._seat[playerNo].allowPoison():
                     candidate.append(playerNo)
+            elif method == "allExceptI":
+                if self._seat[playerNo].getId() != kwargs['selfId']:
+                    candidate.append(playerNo)
             else:
                 raise
         return candidate
@@ -186,14 +189,13 @@ class AgrGame(object):
         hit, counterInfo = self._seat[info["to"]].counter(info)
 
         if hit:
+            info["hit"] = True
             self.attackOrCounterHit(info)
         else:
+            info["hit"] = False
             self.attackOrCounterMiss(info)
             if counterInfo is not None:
                 self.attackOrCounter(counterInfo)
-
-    def poison(self, info):
-        self.calculateDamage(info)
     
     def missile(self, info):
         info["candidate"] = self.getCandidate("missile", frm=info["to"])
@@ -205,12 +207,12 @@ class AgrGame(object):
             if passInfo is not None:
                 self.missile(passInfo)
 
-    #@respond("respondForAttackOrCounterHit")
+    @respond("respondTimeLine2")
     def attackOrCounterHit(self, info):
         self.addJewel(info["gem"], self._seat[info["from"]].getColor())
         self.calculateDamage(info)
 
-    #@respond("respondForAttackOrCounterMiss")
+    @respond("respondTimeLine2")
     def attackOrCounterMiss(self, info):
         pass
 

@@ -1,11 +1,16 @@
 TimeLine1Order = [
-    "JiFengJi",
-    "LieFengJi",
-    "ShengJian",
+    "FastWind",
+    "HardWind",
+    "BloodSword",
+    "BloodRoar",
+    "AccurateShot",
+    "HolySword",
+    "ThunderBolt",
 
 ]
 TimeLine2Order = [
-    "LieFengJi",
+    "PenetrateShot",
+    "Tear",
 ]
 TimeLine3Order = []
 TimeLine4Order = []
@@ -70,6 +75,4 @@ class Respond(object):
     def respondTimeLine6(self, *args, **kwargs):
         for fn, player in self.TimeLine6:
             getattr(player, fn)(*args, **kwargs)
-
-
         
