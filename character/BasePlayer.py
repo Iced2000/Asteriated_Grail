@@ -18,6 +18,7 @@ class BasePlayer(object):
             "weak": [],
             "shield": [],
             "poison": [],
+            "seal": [],
         }
         self._generalAction = 0
         self._attackAction = 0
@@ -82,6 +83,21 @@ class BasePlayer(object):
         else:
             return self._gem >= gem and (self._gem + self._crystal) >= (gem + crystal)
 
+    def checkSeal(self, element):
+        for i, c in enumerate(self._basicEffect["seal"]):
+            if c.getElement() == element:
+                self._gameEngine.removeCards(self.getId(), [self._basicEffect["seal"].pop(i)], False, True)
+                info = self._createInfo(
+                    typ = "magic",
+                    frm = None,
+                    to = self.getId(),
+                    card = None,
+                    value = 3,
+                    gem = None,
+                )
+                self._gameEngine.calculateDamage(info)
+                break
+
     def allowAttack(self, teamColor):
         return teamColor != self.getColor()
 
@@ -95,6 +111,12 @@ class BasePlayer(object):
         return len(self._basicEffect["shield"]) == 0
 
     def allowPoison(self):
+        return True
+
+    def allowSeal(self, element):
+        for c in self._basicEffect["seal"]:
+            if c.getElement() == element:
+                return False
         return True
 
     def hasShield(self):
@@ -145,6 +167,8 @@ class BasePlayer(object):
             self._basicEffect["shield"].append(card)
         elif effectType == "poison":
             self._basicEffect["poison"].append(card)
+        elif effectType == "seal":
+            self._basicEffect["seal"].append(card)
         else:
             raise
 
@@ -426,25 +450,3 @@ class BasePlayer(object):
             self.delJewel(isGem=True)
         for i in range(crysUse):
             self.delJewel(isGem=False)
-
-    #############################################
-    def respondForAttackOrCounterLaunch(self, info):
-        pass
-
-    def respondForAttackOrCounterHit(self, info):
-        pass
-
-    def respondForAttackOrCounterMiss(self, info):
-        pass
-
-    def respondForTimeLine3(self, info):
-        pass
-
-    def respondForTimeLine4(self, info):
-        pass
-
-    def respondForTimeLine5(self, info):
-        pass
-    
-    def respondForTimeLine6(self, info):
-        pass

@@ -64,7 +64,8 @@ class AgrGame(object):
 
     def removeCards(self, playerID, cards, show, recycle):
         if show:
-            pass
+            for c in cards:
+                self._seat[playerID].checkSeal(self, c.getElement())
         else:
             pass
         if recycle:
