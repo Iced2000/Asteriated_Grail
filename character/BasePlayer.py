@@ -2,9 +2,10 @@ from .utils import *
 
 class BasePlayer(object):
 
-    def __init__(self, gameEngine, respond, idx, isRed):
+    def __init__(self, gameEngine, team, respond, idx, isRed):
         self._id = idx
-        self._gameEngine = gameEngine
+        self._GM = gameEngine
+        self._team = team
         self._respond = respond
         self._isRed = isRed
         self._ATK = 2
@@ -13,7 +14,7 @@ class BasePlayer(object):
         self._crystal = 0
         self._cards = []
         self._maxCards = 6
-        self._maxJewels = 3
+        self._maxJewel = 3
         self._basicEffect = {
             "weak": [],
             "shield": [],
@@ -51,19 +52,22 @@ class BasePlayer(object):
 
         discards = [v for i,v in enumerate(self._cards) if i in discardNum]
         self._cards = [v for i,v in enumerate(self._cards) if i not in discardNum]
-        self._gameEngine.removeCards(self.getId(), discards, show, recycle)
+        self._GM.removeCards(self.getId(), discards, show, recycle)
 
-    def addJewel(self, isGem):
-        if isGem:
-            self._gem += 1
-        else:
-            self._crystal += 1
+    def getJewel(self):
+        return (self._gem, self._crystal)
 
-    def delJewel(self, isGem):
-        if isGem:
-            self._gem -= 1
-        else:
-            self._crystal -= 1
+    def addJewel(self, target=(0, 0)):
+        self._gem, self._crystal = addJewel(self.getJewel(), target, self._maxJewel)
+
+    def checkTotalJewel(self, num):
+        return checkTotalJewel(self.getJewel(), num)
+
+    def checkJewel(self, target, force=False):
+        return checkJewel(self.getJewel(), target, force)
+
+    def getJewelCombination(self, num, force=False):
+        return getJewelCombination(self.getJewel(), num, force)
 
     def getId(self):
         return self._id
@@ -77,25 +81,19 @@ class BasePlayer(object):
     def getHandCardNum(self):
         return len(self._cards)
 
-    def checkJewel(self, gem, crystal, force=False):
-        if force:
-            return self._gem >= gem and self._crystal >= crystal
-        else:
-            return self._gem >= gem and (self._gem + self._crystal) >= (gem + crystal)
-
     def checkSeal(self, element):
         for i, c in enumerate(self._basicEffect["seal"]):
             if c.getElement() == element:
-                self._gameEngine.removeCards(self.getId(), [self._basicEffect["seal"].pop(i)], False, True)
+                self._GM.removeCards(self.getId(), [self._basicEffect["seal"].pop(i)], False, True)
                 info = self._createInfo(
                     typ = "magic",
                     frm = None,
                     to = self.getId(),
                     card = None,
                     value = 3,
-                    gem = None,
+                    jewel = None,
                 )
-                self._gameEngine.calculateDamage(info)
+                self._GM.calculateDamage(info)
                 break
 
     def allowAttack(self, teamColor):
@@ -192,7 +190,7 @@ class BasePlayer(object):
                         to = target,
                         card = self._cards[cardNum], 
                         value = 2,
-                        gem = False,
+                        jewel = (0, 1),
                     )
                 self.removeHandCards([cardNum], show=True)
                 return False, counterInfo
@@ -215,7 +213,7 @@ class BasePlayer(object):
                     to = target,
                     card = self._cards[cardNum], 
                     value = info["value"],
-                    gem = None,
+                    jewel = None,
                 )
             self.removeHandCards([cardNum], True)
             return False, missileInfo
@@ -239,23 +237,23 @@ class BasePlayer(object):
                 to = self.getId(),
                 card = None,
                 value = len(self._basicEffect["poison"]),
-                gem = None,
+                jewel = None,
             )
-            self._gameEngine.removeCards(self.getId(), 
+            self._GM.removeCards(self.getId(), 
                 self._basicEffect["poison"], False, True)
             self._basicEffect["poison"] = []
-            self._gameEngine.calculateDamage(info)
+            self._GM.calculateDamage(info)
 
     def _checkWeak(self):
         if self._basicEffect["weak"]:
-            self._gameEngine.removeCards(self.getId(), 
+            self._GM.removeCards(self.getId(), 
                 self._basicEffect["weak"], False, True)
             self._basicEffect["weak"] = []
 
             if askBinary("Weak! Pass "):
                 self._roundSkip = True
             else:
-                self._gameEngine.drawCards(3, True, self.getId())
+                self._GM.drawCards(3, True, self.getId())
 
     def _getAvailCards(self, funcName, *arg, **kwarg):
         self.printHandCards()
@@ -267,12 +265,11 @@ class BasePlayer(object):
 
     def _getAvailSP(self):
         availSP = []
-        teamGem, teamCrystal = self._gameEngine.getTeamJewel(self.getColor())
-        if (teamGem or teamCrystal) and ((self._gem + self._crystal) < self._maxJewels):
+        if self._team.checkTotalJewel(1) and not self.checkTotalJewel(self._maxJewel):
             availSP.append(TAKE)
         if (self._maxCards - len(self._cards)) >= 3:
             availSP.append(BUY)
-            if (teamGem + teamCrystal) >= 3:
+            if self._team.checkTotalJewel(3):
                 availSP.append(SYN)
         return availSP
 
@@ -280,7 +277,7 @@ class BasePlayer(object):
         return []
 
     def _attack(self, cardNum):
-        candidate = self._gameEngine.getCandidate("attack", frm=self.getId())
+        candidate = self._GM.getCandidate("attack", frm=self.getId())
         inCandi, target = askSelection("target:", candidate, 1, allowOutOfIdx=True)
 
         if inCandi:
@@ -296,10 +293,10 @@ class BasePlayer(object):
                         to = target,
                         card = self._cards[cardNum],
                         value = self._ATK,
-                        gem = True,
+                        jewel = (1, 0),
                     )
             self.removeHandCards([cardNum], show=True)
-            self._gameEngine.attackOrCounter(info)
+            self._GM.attackOrCounter(info)
 
             self._postAttack()
         else:
@@ -310,7 +307,7 @@ class BasePlayer(object):
 
     def _basicMagic(self, cardNum):
         magicType = self._cards[cardNum].getMagicName()
-        candidate = self._gameEngine.getCandidate(magicType, frm=self.getId())
+        candidate = self._GM.getCandidate(magicType, frm=self.getId())
         inCandi, target = askSelection("target:", candidate, 1, allowOutOfIdx=True)
 
         if inCandi:
@@ -322,7 +319,7 @@ class BasePlayer(object):
                 raise
 
             if magicType in ["weak", "shield", "poison"]:
-                self._gameEngine.addBasicEffect(magicType, target, self._cards[cardNum], self.getId())
+                self._GM.addBasicEffect(magicType, target, self._cards[cardNum], self.getId())
                 self.removeHandCards([cardNum], show=True, recycle=False)
 
             elif magicType == "missile":
@@ -332,10 +329,10 @@ class BasePlayer(object):
                     to = target,
                     card = self._cards[cardNum], 
                     value = 2,
-                    gem = None,
+                    jewel = None,
                 )
                 self.removeHandCards([cardNum], True)
-                self._gameEngine.missile(info)
+                self._GM.missile(info)
             else:
                 raise
 
@@ -364,39 +361,22 @@ class BasePlayer(object):
             raise
 
     def _specialTake(self):
-        teamGem, teamCrystal = self._gameEngine.getTeamJewel(self.getColor())
-        maxTake = self._maxJewels - self._gem - self._crystal
-        gem, crystal = 0, 0
-        while (gem+crystal) > 2 or (gem+crystal) <= 0 or \
-                (gem+crystal) > maxTake or gem > teamGem or crystal > teamCrystal:
-            print("TeamGem:{}, TeamCrystal:{}, Max Take:{}".format(teamGem, teamCrystal, maxTake, 2))
-            gem = int(input("No. of Gem:"))
-            crystal = int(input("No. of Cry:"))
-        for i in range(gem):
-            self.addJewel(isGem=True)
-            self._gameEngine.delJewel(gem=True, isRed=self.getColor())
-        for i in range(crystal):
-            self.addJewel(isGem=False)
-            self._gameEngine.delJewel(gem=False, isRed=self.getColor())
+        maxTake = min(2, self._maxJewel - self._gem - self._crystal)
+        comb = self._team.getJewelCombination(maxTake)
+        _, jewel = askSelection("combination:", comb, 1)
+        self.addJewel(jewel)
+        self._team.addJewel((-jewel[0], -jewel[1]))
 
     def _specialBuy(self):
-        self._gameEngine.drawCards(3, True, self.getId())
-        self._gameEngine.addJewel(True, self.getColor())
-        self._gameEngine.addJewel(False, self.getColor())
+        self._GM.drawCards(3, True, self.getId())
+        self._team.addJewel((1, 1))
 
     def _specialSyn(self):
-        teamGem, teamCrystal = self._gameEngine.getTeamJewel(self.getColor())
-        self._gameEngine.drawCards(3, True, self.getId())
-        gem, crystal = 0, 0
-        while (gem+crystal) != 3 or gem > teamGem or crystal > teamCrystal:
-            print("TeamGem:{}, TeamCrystal:{}".format(teamGem, teamCrystal))
-            gem = int(input("No. of Gem:"))
-            crystal = int(input("No. of Cry:"))
-        for i in range(gem):
-            self._gameEngine.delJewel(True, self.getColor())
-        for i in range(crystal):
-            self._gameEngine.delJewel(False, self.getColor())
-        self._gameEngine.addAgrail(self.getColor())
+        self._GM.drawCards(3, True, self.getId())
+        comb = self._team.getJewelCombination(3, force=True)
+        _, jewel = askSelection("combination:", comb, 1)
+        self._team.addJewel((-jewel[0], -jewel[1]))
+        self._GM.addGrail(self.getColor())
 
     def _magic(self, magicNum):
         if self._generalAction > 0:
@@ -411,12 +391,12 @@ class BasePlayer(object):
         if not shieldable:
             return True
         elif len(self._basicEffect["shield"]) != 0:
-            self._gameEngine.removeCards(self.getId(), [self._basicEffect["shield"].pop()], False, True)
+            self._GM.removeCards(self.getId(), [self._basicEffect["shield"].pop()], False, True)
             return False
         else:
             return True
 
-    def _createInfo(self, typ, frm, to, card, value, gem, healable=1e5):
+    def _createInfo(self, typ, frm, to, card, value, jewel, healable=1e5):
         Info = {
             "type": typ,
             "from": frm,
@@ -424,7 +404,7 @@ class BasePlayer(object):
             "card": card,
             "counterable": 0 if card and card.isDark() else 1, # force = 2
             "value": value,
-            "gem": gem,
+            "jewel": jewel,
             "healable": healable,
             "shieldable": True,
         }
@@ -433,20 +413,15 @@ class BasePlayer(object):
     def _skillReset(self):
         pass
 
-    def _useJewel(self, gem, crystal, force=False):
-        assert(gem <= self._gem and (gem + crystal) <= (self._gem + self._crystal))
+    def _useJewel(self, jewel, force=False):
+        assert(self.checkJewel(jewel, force))
         if force:
-            assert(crystal <= self._crystal)
-            gemUse = gem
-            crysUse = crystal
+            self.addJewel((-jewel[0], -jewel[1]))
         else:
-            gemUse, crysUse = 0, 0
-            while (gemUse+crysUse) != (gem+crystal) or gemUse > self._gem or crysUse > self._crystal or gemUse < gem:
-                print("Total usage: Gem:{}, Crystal:{}\nYour Gem:{}, Crystal:{}".format(gem, crystal, self._gem, self._crystal))
-                gemUse = int(input("No. of Gem:"))
-                crysUse = int(input("No. of Cry:"))
-
-        for i in range(gemUse):
-            self.delJewel(isGem=True)
-        for i in range(crysUse):
-            self.delJewel(isGem=False)
+            comb = []
+            candidate = self.getJewelCombination(jewel[0] + jewel[1], force=True)
+            for candi in candidate:
+                if checkJewel(jewel, candi):
+                    comb.append(candi)
+            _, jewel = askSelection("combination:", comb, 1)
+            self.addJewel((-jewel[0], -jewel[1]))

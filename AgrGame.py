@@ -1,30 +1,25 @@
 import character
 import card
 import Respond
+import AgrTeam
 
 class AgrGame(object):
     def __init__(self):
         self._pile = card.AgrCardCollection("card/cardDB.txt")
         self._respond = Respond.Respond()
 
-        self._blueGem = 0
-        self._blueCrystal = 0
-        self._blueMorale = 15
-        self._blueGrail = 0
-
-        self._redGem = 0
-        self._redCrystal = 0
-        self._redMorale = 15
-        self._redGrail = 0
+        self._redTeam = AgrTeam.AgrTeam(isRed=True, players=[0, 2, 3])
+        self._blueTeam = AgrTeam.AgrTeam(isRed=True, players=[1, 4, 5])
         
         self._seat = {
-            0: character.BowGoddess(self, self._respond, 0, True),
-            1: character.BasePlayer(self, self._respond, 1, False),
-            2: character.BasePlayer(self, self._respond, 2, True),
-            3: character.BasePlayer(self, self._respond, 3, True),
-            4: character.BasePlayer(self, self._respond, 4, False),
-            5: character.BasePlayer(self, self._respond, 5, False),
+            0: character.BasePlayer(self, self._redTeam, self._respond, 0, True),
+            1: character.BasePlayer(self, self._blueTeam, self._respond, 1, False),
+            2: character.BasePlayer(self, self._redTeam, self._respond, 2, True),
+            3: character.BasePlayer(self, self._redTeam, self._respond, 3, True),
+            4: character.BasePlayer(self, self._blueTeam, self._respond, 4, False),
+            5: character.BasePlayer(self, self._blueTeam, self._respond, 5, False),
         }
+
         self._respond.sortAll()
         self._currentPlayerID = 0
         self._playerNum = len(self._seat)
@@ -33,9 +28,7 @@ class AgrGame(object):
             self.drawCards(num=4, harmed=False, _id=i)
 
     def __str__(self):
-        return "blue\t\t\tred\n\tGem:{}\t\t\tGem:{}\n\tCrystal:{}\t\tCrystal:{}\n\tMorale:{}\t\tMorale:{}\n\tGrail:{}\t\t\tGrail:{}\n".format(
-            self._blueGem, self._redGem,self._blueCrystal, self._redCrystal, 
-            self._blueMorale, self._redMorale, self._blueGrail, self._redGrail,)
+        return "blue\n" + str(self._blueTeam) + "red\n" + str(self._redTeam)
 
     def run(self):
         while(True):
@@ -58,61 +51,42 @@ class AgrGame(object):
         overflow = self._seat[_id].addHandCards(self._pile.deal(num), harmed)
         if harmed:
             if overflow > 0:
-                self.adjustMorale(overflow, self._seat[_id].getColor())
+                self.addMorale(-overflow, self._seat[_id].getColor())
         else:
             return
 
     def removeCards(self, playerID, cards, show, recycle):
         if show:
             for c in cards:
-                self._seat[playerID].checkSeal(self, c.getElement())
+                self._seat[playerID].checkSeal(c.getElement())
         else:
             pass
         if recycle:
             self._pile.recycle(cards)
 
-    def adjustMorale(self, num, isRed):
+    def addMorale(self, num, isRed):
         if isRed:
-            self._redMorale -= num
-            if self._redMorale <= 0:
+            if self._redTeam.addMorale(num):
                 self.gameEnd(False)
         else:
-            self._blueMorale -= num
-            if self._blueMorale <= 0:
+            if self._blueTeam.addMorale(num):
                 self.gameEnd(True)
 
-    def addAgrail(self,isRed):
+    def addGrail(self, isRed):
         if isRed:
-            self._redGrail += 1
-            if self._redGrail == 5:
+            if self._redTeam.addGrail(1):
                 self.gameEnd(True)
         else:
-            self._blueGrail += 1
-            if self._blueGrail == 5:
+            if self._blueTeam.addGrail(1):
                 self.gameEnd(False)
 
-    def addJewel(self, gem, isRed):
-        if gem == None:
+    def addJewel(self, jewel, isRed):
+        if jewel == None:
             return
         if isRed:
-            if self._redGem + self._redCrystal == 5:
-                return
-            if gem: self._redGem += 1
-            else:   self._redCrystal += 1
+            self._redTeam.addJewel(jewel)
         else:
-            if self._blueGem + self._blueCrystal == 5:
-                return
-            if gem: self._blueGem += 1
-            else:   self._blueCrystal += 1
-        return
-
-    def delJewel(self, gem, isRed):
-        if isRed:
-            if gem: self._redGem -= 1
-            else:   self._redCrystal -= 1
-        else:
-            if gem: self._blueGem -= 1
-            else:   self._blueCrystal -= 1
+            self._blueTeam.addJewel(jewel)
 
     def getTeamJewel(self, isRed):
         if isRed:
@@ -210,19 +184,16 @@ class AgrGame(object):
 
     @respond("respondTimeLine2")
     def attackOrCounterHit(self, info):
-        self.addJewel(info["gem"], self._seat[info["from"]].getColor())
+        self.addJewel(info["jewel"], self._seat[info["from"]].getColor())
         self.calculateDamage(info)
 
     @respond("respondTimeLine2")
     def attackOrCounterMiss(self, info):
         pass
 
-    #@respond("respondForAttackOrCounterHit")
     def missileHit(self, info):
-        #self.addJewel(info["gem"], self._seat[info["from"]].getColor())
         self.calculateDamage(info)
 
-    #@respond("respondForAttackOrCounterMiss")
     def missileMiss(self, info):
         info['value'] += 1
 

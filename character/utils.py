@@ -19,10 +19,10 @@ def askSelection(msg, avail, num, allowOutOfIdx=False):
     for i in range(num):
         ipt = int(input(msg))
         if not allowOutOfIdx:
-            assert(ipt in avail)
-        elif ipt not in avail:
+            assert(ipt in range(len(avail)))
+        elif ipt not in range(len(avail)):
             return False, []
-        tmp.append(ipt)
+        tmp.append(avail[ipt])
     if num == 1:
         return True, tmp[0]
     else:
@@ -39,3 +39,37 @@ def checkAtt(player, info):
 
 def checkAoC(player, info):
     return info["from"] == player.getId() and info["type"] in ["attack", "counter"]
+
+
+########################### Jewel ################################
+
+def checkTotalJewel(jewel, num):
+    return jewel[0] + jewel[1] >= num
+
+def checkJewel(jewel, target, force=False):
+    if force:
+        return jewel[0] >= target[0] and jewel[1] >= target[1]
+    else:
+        return jewel[0] >= target[0] and jewel[0] + jewel[1] >= target[0] + target[1]
+
+def getJewelCombination(jewel, num, force=False):
+    res = []
+    startPoint = 1 if not force else num
+    for i in range(startPoint, num + 1):
+        for j in range(i + 1):
+            tmp = (j, i - j)
+            if checkJewel(jewel, tmp, force=True):
+                res.append(tmp)
+    return res
+
+def addJewel(jewel, target, maxJewel):
+    resGem, resCrys = jewel
+    prevGem, prevCrys = jewel
+
+    resGem += target[0]
+    resCrys += target[1]
+
+    if resGem + resCrys > maxJewel:
+        resGem = min(resGem, maxJewel - min(prevCrys, resCrys))
+        resCrys = maxJewel - resGem
+    return (resGem, resCrys)
