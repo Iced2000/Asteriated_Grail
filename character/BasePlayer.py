@@ -10,7 +10,7 @@ class BasePlayer(object):
         self._isRed = isRed
         self._ATK = 2
         self._heal = 0
-        self._gem = 1
+        self._gem = 0
         self._crystal = 0
         self._cards = []
         self._maxCards = 6
@@ -66,8 +66,8 @@ class BasePlayer(object):
     def checkJewel(self, target, force=False):
         return checkJewel(self.getJewel(), target, force)
 
-    def getJewelCombination(self, num, force=False):
-        return getJewelCombination(self.getJewel(), num, force)
+    def getTotalJewelCombination(self, num, force=False):
+        return getTotalJewelCombination(self.getJewel(), num, force)
 
     def getId(self):
         return self._id
@@ -362,7 +362,7 @@ class BasePlayer(object):
 
     def _specialTake(self):
         maxTake = min(2, self._maxJewel - self._gem - self._crystal)
-        comb = self._team.getJewelCombination(maxTake)
+        comb = self._team.getTotalJewelCombination(maxTake)
         _, jewel = askSelection("combination:", comb, 1)
         self.addJewel(jewel)
         self._team.addJewel((-jewel[0], -jewel[1]))
@@ -373,7 +373,7 @@ class BasePlayer(object):
 
     def _specialSyn(self):
         self._GM.drawCards(3, True, self.getId())
-        comb = self._team.getJewelCombination(3, force=True)
+        comb = self._team.getTotalJewelCombination(3, force=True)
         _, jewel = askSelection("combination:", comb, 1)
         self._team.addJewel((-jewel[0], -jewel[1]))
         self._GM.addGrail(self.getColor())
@@ -418,10 +418,6 @@ class BasePlayer(object):
         if force:
             self.addJewel((-jewel[0], -jewel[1]))
         else:
-            comb = []
-            candidate = self.getJewelCombination(jewel[0] + jewel[1], force=True)
-            for candi in candidate:
-                if checkJewel(jewel, candi):
-                    comb.append(candi)
+            comb = getJewelCombination(self.getJewel(), jewel)
             _, jewel = askSelection("combination:", comb, 1)
             self.addJewel((-jewel[0], -jewel[1]))

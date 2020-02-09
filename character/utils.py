@@ -52,7 +52,7 @@ def checkJewel(jewel, target, force=False):
     else:
         return jewel[0] >= target[0] and jewel[0] + jewel[1] >= target[0] + target[1]
 
-def getJewelCombination(jewel, num, force=False):
+def getTotalJewelCombination(jewel, num, force=False):
     res = []
     startPoint = 1 if not force else num
     for i in range(startPoint, num + 1):
@@ -61,6 +61,14 @@ def getJewelCombination(jewel, num, force=False):
             if checkJewel(jewel, tmp, force=True):
                 res.append(tmp)
     return res
+
+def getJewelCombination(jewel, target):
+    comb = []
+    candidate = getTotalJewelCombination(jewel, target[0] + target[1], force=True)
+    for candi in candidate:
+        if checkJewel(candi, target):
+            comb.append(candi)
+    return comb
 
 def addJewel(jewel, target, maxJewel):
     resGem, resCrys = jewel

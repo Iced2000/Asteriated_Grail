@@ -37,8 +37,8 @@ class AgrTeam(object):
     def checkJewel(self, target, force=False):
         return utils.checkJewel(self.getJewel(), target, force)
 
-    def getJewelCombination(self, num, force=False):
-        return utils.getJewelCombination(self.getJewel(), num, force)
+    def getTotalJewelCombination(self, num, force=False):
+        return utils.getTotalJewelCombination(self.getJewel(), num, force)
 
 if __name__ == '__main__':
     t = AgrTeam(True, 1, 3, 2)
