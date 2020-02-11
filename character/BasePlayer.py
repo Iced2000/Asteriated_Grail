@@ -14,7 +14,6 @@ class BasePlayer(object):
         self._jewel = AgrJewel(maxJewel=3)
         self._cards = []
         self._maxCards = 6
-        #self._maxJewel = 3
         self._basicEffect = {
             "weak": [],
             "shield": [],
