@@ -1,4 +1,5 @@
 from .utils import *
+from .AgrJewel import AgrJewel
 
 class BasePlayer(object):
 
@@ -10,11 +11,10 @@ class BasePlayer(object):
         self._isRed = isRed
         self._ATK = 2
         self._heal = 0
-        self._gem = 0
-        self._crystal = 0
+        self._jewel = AgrJewel(maxJewel=3)
         self._cards = []
         self._maxCards = 6
-        self._maxJewel = 3
+        #self._maxJewel = 3
         self._basicEffect = {
             "weak": [],
             "shield": [],
@@ -29,8 +29,8 @@ class BasePlayer(object):
         self._roundSkip = False
 
     def __str__(self):
-        return "Player {}\n\tGem:{} Crystal:{}\n\tWeak:{} Shield:{} Poison:{}\n\tHeal:{}".format(
-            self.getId(), self._gem, self._crystal, len(self._basicEffect["weak"]), 
+        return "Player {}\n{}\tWeak:{} Shield:{} Poison:{}\n\tHeal:{}".format(
+            self.getId(), str(self._jewel), len(self._basicEffect["weak"]), 
             len(self._basicEffect["shield"]), len(self._basicEffect["poison"]), self._heal)
 
     def printHandCards(self):
@@ -54,20 +54,26 @@ class BasePlayer(object):
         self._cards = [v for i,v in enumerate(self._cards) if i not in discardNum]
         self._GM.removeCards(self.getId(), discards, show, recycle)
 
-    def getJewel(self):
-        return (self._gem, self._crystal)
-
     def addJewel(self, target=(0, 0)):
-        self._gem, self._crystal = addJewel(self.getJewel(), target, self._maxJewel)
+        self._jewel.addJewel(target)
+
+    def useJewel(self, target, force=False):
+        assert(self.checkJewel(target, force))
+        if force:
+            self.addJewel((-target[0], -target[1]))
+        else:
+            comb = self._jewel.getJewelCombination(target)
+            _, target = askSelection("combination:", comb, 1)
+            self.addJewel((-target[0], -target[1]))
 
     def checkTotalJewel(self, num):
-        return checkTotalJewel(self.getJewel(), num)
+        return self._jewel.checkTotalJewel(num)
 
     def checkJewel(self, target, force=False):
-        return checkJewel(self.getJewel(), target, force)
+        return self._jewel.checkJewel(target, force)
 
     def getTotalJewelCombination(self, num, force=False):
-        return getTotalJewelCombination(self.getJewel(), num, force)
+        return self._jewel.getTotalJewelCombination(num, force)
 
     def getId(self):
         return self._id
@@ -265,7 +271,7 @@ class BasePlayer(object):
 
     def _getAvailSP(self):
         availSP = []
-        if self._team.checkTotalJewel(1) and not self.checkTotalJewel(self._maxJewel):
+        if self._team.checkTotalJewel(1) and not self._jewel.full():
             availSP.append(TAKE)
         if (self._maxCards - len(self._cards)) >= 3:
             availSP.append(BUY)
@@ -361,7 +367,7 @@ class BasePlayer(object):
             raise
 
     def _specialTake(self):
-        maxTake = min(2, self._maxJewel - self._gem - self._crystal)
+        maxTake = min(2, self._jewel.residual())
         comb = self._team.getTotalJewelCombination(maxTake)
         _, jewel = askSelection("combination:", comb, 1)
         self.addJewel(jewel)
@@ -412,12 +418,3 @@ class BasePlayer(object):
 
     def _skillReset(self):
         pass
-
-    def _useJewel(self, jewel, force=False):
-        assert(self.checkJewel(jewel, force))
-        if force:
-            self.addJewel((-jewel[0], -jewel[1]))
-        else:
-            comb = getJewelCombination(self.getJewel(), jewel)
-            _, jewel = askSelection("combination:", comb, 1)
-            self.addJewel((-jewel[0], -jewel[1]))
