@@ -3,8 +3,9 @@
 from models.Player import Player
 from models.Team import Team
 from models.Deck import Deck
+from models.Effect import HolyShieldEffect
 from views.ConsoleInterface import ConsoleInterface
-from models.Action import AttackAction, MagicAction, SynthesisAction, PurchaseAction, RefineAction
+from models.Action import AttackAction, MagicAction, SynthesisAction, PurchaseAction, RefineAction, HolyLightCardAction, NoResponseAction, CounterCardAction
 from game_engine.EventManager import EventManager
 
 class AgrGameEngine:
@@ -12,7 +13,6 @@ class AgrGameEngine:
         self.interface = ConsoleInterface()
         self.event_manager = EventManager()
         self.setup_game(config)
-        self.setup_listeners()
         self.setup_damage_timeline()
         self.setup_game_timeline()
         self.current_turn = 0
@@ -38,10 +38,6 @@ class AgrGameEngine:
             player.draw_initial_hand()
             self.players.append(player)
             team.add_player(player)
-
-    def setup_listeners(self):
-        self.event_manager.subscribe("attack", self.handle_attack_or_counter)
-        self.event_manager.subscribe("counter", self.handle_attack_or_counter)
 
     def setup_damage_timeline(self):
         """
@@ -168,7 +164,6 @@ class AgrGameEngine:
                              Expected keys: 'attacker', 'defender', 'card', 'damage_type'
         :param start_step: The step to start processing from (1 to 6).
         """
-        self.current_attack = attack_event
         print(f"\n=== Processing Damage Timeline for Attack: {attack_event} ===")
         
         steps = [
@@ -181,113 +176,122 @@ class AgrGameEngine:
         ]
         
         for step in steps[start_step-1:]:
-            self.event_manager.emit(step, attack=self.current_attack)
+            self.event_manager.emit(step, attack_event=attack_event)
         
         # After processing, check for game end conditions
         self.check_game_end()
 
-    def on_attack_activation(self, attack):
+    def on_attack_activation(self, attack_event):
         """
         Handles Step 1: Attack Activation
         """
-        attacker = self.players[attack['attacker']]
-        defender = self.players[attack['defender']]
-        card = attack.get('card')
-        damage_type = attack.get('damage_type', 'attack')
-        print(f"[Step 1] {attacker.id} activates {damage_type} with {card.name}.")
+        attack_type = attack_event.get('attack_type', 'attack')
+        attacker = attack_event['attacker']
+        defender = attack_event['defender']
+        card = attack_event.get('card')
+        amount = attack_event.get('amount', 2)
+        # damage_type = attack_event.get('damage_type', 'attack')
+        print(f"[Step 1] {attacker.id} {attack_type} {defender.id} with {card.name}.")
         # Additional logic for attack activation can be added here
 
-    def on_hit_determination(self, attack):
+    def on_hit_determination(self, attack_event):
         """
         Handles Step 2: Hit Determination
         """
-        attacker = self.players[attack['attacker']]
-        defender = self.players[attack['defender']]
-        # Simplistic hit determination: 75% chance to hit
-        import random
-        hit_chance = 0.75
-        hit = random.random() < hit_chance
-        attack['hit'] = hit
-        result = "hit" if hit else "missed"
-        print(f"[Step 2] {attacker.id}'s attack {result} {defender.id}.")
+        attacker = attack_event['attacker']
+        defender = attack_event['defender']
+        if attack_event.get('forced hit', False):
+            attack_event['hit'] = True
+            print(f"[Step 2] {attacker.id}'s attack forced hit {defender.id}.")
+            return
 
-    def on_damage_calculation(self, attack):
+        valid_counter_actions = defender.get_valid_counter_actions(attack_event)
+        if valid_counter_actions:
+            print(f"[Step 2] {defender.id} has valid counter actions: {valid_counter_actions}.")
+            defender_action = self.interface.prompt_defender_action(defender, attacker, valid_counter_actions)
+            if isinstance(defender_action, CounterCardAction):
+                attack_event['hit'] = False
+                print(f"[Step 2] {defender.id} counters with {defender_action.card.name}.")
+                defender_action.execute(defender, self)
+            elif isinstance(defender_action, HolyLightCardAction):
+                attack_event['hit'] = False
+                print(f"[Step 2] {defender.id} uses Holy Light to cancel the attack.")
+            elif isinstance(defender_action, HolyShieldEffect):
+                attack_event['hit'] = False
+                print(f"[Step 2] {defender.id} uses Holy Shield to cancel the attack.")
+                defender_action.execute(defender, self)
+            elif isinstance(defender_action, NoResponseAction):
+                attack_event['hit'] = True
+                print(f"[Step 2] {defender.id} takes the hit.")
+        else:
+            attack_event['hit'] = True
+            print(f"[Step 2] {defender.id} takes the hit.")
+
+    def on_damage_calculation(self, attack_event):
         """
         Handles Step 3: Damage Calculation
         """
-        if not attack.get('hit'):
-            attack['damage_amount'] = 0
+        if not attack_event.get('hit'):
+            attack_event['damage_amount'] = 0
             print("[Step 3] No damage to calculate due to missed attack.")
             return
         
-        damage_type = attack.get('damage_type', 'attack')
-        base_damage = 2  # Base damage for attack cards
-        # Modify damage based on damage type
-        if damage_type == 'attack':
-            attack['damage_amount'] = base_damage
-        elif damage_type == 'magic':
-            attack['damage_amount'] = base_damage + 1  # Example modification
-        else:
-            attack['damage_amount'] = base_damage
-        print(f"[Step 3] Calculated damage: {attack['damage_amount']} ({damage_type}).")
+        print(f"[Step 3] Calculated damage: {attack_event['damage_amount']}.")
 
-    def on_healing_response(self, attack):
+    def on_healing_response(self, attack_event):
         """
         Handles Step 4: Healing Response
         """
-        if attack['damage_amount'] <= 0:
+        if attack_event['damage_amount'] <= 0:
             print("[Step 4] No healing response needed.")
             return
         
-        defender = self.players[attack['defender']]
-        damage = attack['damage_amount']
+        defender = attack_event['defender']
+        damage = attack_event['damage_amount']
         print(f"[Step 4] {defender.id} has {damage} damage to respond to.")
         
         # Defender decides to use healing
         healing_used = defender.respond_to_damage(damage)
-        attack['healing_used'] = healing_used.get('healing', 0)
-        print(f"[Step 4] {defender.id} uses {attack['healing_used']} healing.")
+        attack_event['healing_used'] = healing_used.get('healing', 0)
+        print(f"[Step 4] {defender.id} uses {attack_event['healing_used']} healing.")
 
-    def on_actual_damage_application(self, attack):
+    def on_actual_damage_application(self, attack_event):
         """
         Handles Step 5: Actual Damage Application
         """
-        damage = attack['damage_amount'] - attack.get('healing_used', 0)
+        damage = attack_event['damage_amount'] - attack_event.get('healing_used', 0)
         damage = max(damage, 0)  # Prevent negative damage
-        attack['final_damage'] = damage
-        print(f"[Step 5] {attack['defender']} will receive {damage} damage after healing.")
+        attack_event['final_damage'] = damage
+        print(f"[Step 5] {attack_event['defender']} will receive {damage} damage after healing.")
 
-    def on_damage_reception(self, attack):
+    def on_damage_reception(self, attack_event):
         """
         Handles Step 6: Damage Reception
         """
-        final_damage = attack.get('final_damage', 0)
+        final_damage = attack_event.get('final_damage', 0)
         if final_damage > 0:
-            defender = self.players[attack['defender']]
-            defender.take_damage(final_damage, damage_type=attack.get('damage_type', 'attack'))
-            # Handle morale and grail additions based on rules
-            if attack.get('damage_type', 'attack') == 'attack':
-                attacker_team = self.players[attack['attacker']].team
-                attacker_team.add_grail(1)  # Example: Attack adds Grail
-                print(f"Attacker's team grail increased by 1. Total Grail: {attacker_team.grail}")
+            defender = attack_event['defender']
+            defender.take_damage(final_damage, damage_type=attack_event.get('attack_type', 'attack'))
+            attacker_team = attack_event['attacker'].team
+            if attack_event.get('attack_type', 'attack') == 'attack':
+                attacker_team.jewels.add_jewel(gem_add=1)
+                print(f"Attacker's team gains 1 Gem for a successful attack.")
+            elif attack_event.get('attack_type', 'attack') == 'counter':
+                attacker_team.jewels.add_jewel(crystal_add=1)
+                print(f"Attacker's team gains 1 Crystal for a successful counterattack.")
         else:
             print("[Step 6] No actual damage to apply.")
 
-    def execute_attack(self, attacker_id, defender_id, card):
-        """
-        Executes an attack from attacker to defender using a specific card.
-        
-        :param attacker_id: ID of the attacking player.
-        :param defender_id: ID of the defending player.
-        :param card: The card being used to attack.
-        """
+    def execute_attack(self, attack_type, attacker, defender, card, damage_amount, can_not_counter=False, start_step=1):
         attack_event = {
-            'attacker': attacker_id,
-            'defender': defender_id,
+            'attack_type': attack_type,
+            'attacker': attacker,
+            'defender': defender,
             'card': card,
-            'damage_type': card.damage_type  # Assume card has a damage_type attribute
+            'damage_amount': damage_amount,
+            'can_not_counter': can_not_counter,
         }
-        self.process_damage_timeline(attack_event)
+        self.process_damage_timeline(attack_event, start_step=start_step)
 
     def check_game_end(self):
         """
@@ -364,6 +368,7 @@ class AgrGameEngine:
         """
         print(f"Round end for Player {player.id}.")
         # Add logic for round end events here
+        player.round_end()
 
     def on_turn_end(self, player):
         """
@@ -371,4 +376,4 @@ class AgrGameEngine:
         """
         print(f"Turn end for Player {player.id}.")
         # Add logic for turn end events here
-        player.round_end()
+        

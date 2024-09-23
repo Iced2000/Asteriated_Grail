@@ -4,20 +4,23 @@ from .Jewel import AgrJewel
 from .Action import (
     AttackAction, MagicAction, SynthesisAction,
     PurchaseAction, RefineAction,
-    AttackCardAction, MagicCardAction,
+    AttackCardAction, MagicCardAction, HolyLightCardAction,
+    CounterCardAction, NoResponseAction
 )
-from .Effect import HealingEffect
+from .Effect import HolyShieldEffect
+from .Heal import Heal
+
 class Player:
     def __init__(self, player_id, team, deck, interface):
         self.id = player_id
         self.team = team
-        self.health = 0
         self.deck = deck
         self.interface = interface
+        self.heal = Heal()
         self.hand = []
         self.jewels = AgrJewel(maxJewel=3)  # Player's jewel capacity is 3
         self.max_hand_size = 6  # Define maximum hand size as per rules
-        self.effects = {}  # Dictionary to hold active effects
+        self.effects = []  # List to hold active effects
         self.can_be_attacked = True
         self.action_points = {
             "general": 1,
@@ -56,7 +59,7 @@ class Player:
             available_actions = self.get_available_actions()
             if not available_actions:
                 print("No available actions to perform.")
-                break
+                raise Exception("No available actions to perform.")
 
             # Debug Statement
             print(f"Debug: Available Actions = {available_actions} (Type: {type(available_actions)})")
@@ -86,11 +89,12 @@ class Player:
         # Implement any round-end effects here
         print(f"Player {self.id}'s round is ending.")
         self.reset_actions()
+        print(f"Player {self.id} has {self.action_points} action points.")
 
 
     def process_effects_start_of_turn(self):
         # Process ongoing effects at the start of the player's turn
-        for effect in list(self.effects.values()):
+        for effect in self.effects:
             if hasattr(effect, 'process_turn'):
                 effect.process_turn(self)
 
@@ -126,7 +130,7 @@ class Player:
             elif card.is_magic():
                 action = MagicCardAction(card)
             else:
-                continue
+                raise Exception("Card is not an attack or magic card.")
 
             if action.available(self):
                 available_actions.append(action)
@@ -182,7 +186,9 @@ class Player:
         Returns a string containing the player's public information without revealing the hand.
         Includes hand size.
         """
-        return (f"Player {self.id}, Jewels: {self.jewels}, Hand Size: {len(self.hand)}, Effects: {list(self.effects.keys())}, Health: {self.health}")
+        return (f"Player {self.id}, Jewels: {self.jewels}, \
+Hand Size: {len(self.hand)}, Effects: {self.effects}, \
+Heal: {self.heal}, Action Points: {self.action_points}")
 
     def show_hand(self):
         """
@@ -193,18 +199,34 @@ class Player:
             print(f"{idx}: {card}")
         print("--------------------------\n")
 
-    def get_valid_counter_cards(self, attack_card):
+    def get_valid_counter_actions(self, attack_event):
         """
         Returns a list of valid counter cards based on the attack card.
         """
-        if attack_card.is_dark_extinction():
-            return [card for card in self.hand if card.is_holy_light()]
+        valid_counter_actions = [NoResponseAction()]
+        attack_card = attack_event.get('card')
+        if attack_event.get('can_not_counter'):
+            for card in self.hand:
+                if card.is_holy_light():
+                    valid_counter_actions.append(HolyLightCardAction(card))
         else:
-            # Normal counter rules
-            return [card for card in self.hand if (card.is_attack() and card.element == attack_card.element) or card.is_holy_light()]
+            for card in self.hand:
+                if card.is_attack():
+                    action = CounterCardAction(card)
+                elif card.is_magic():
+                    action = HolyLightCardAction(card)
 
-    
-    
+                if action.available(self, attack_event):
+                    valid_counter_actions.append(action)
+        
+        for effect in self.effects:
+            if isinstance(effect, HolyShieldEffect):
+                valid_counter_actions.append(effect)
+                if any(isinstance(action, NoResponseAction) for action in valid_counter_actions):
+                    valid_counter_actions = [action for action in valid_counter_actions if not isinstance(action, NoResponseAction)]
+        
+        return valid_counter_actions
+
     def respond_to_damage(self, damage):
         """
         Allows the player to respond to incoming damage with healing or other effects.
@@ -213,20 +235,13 @@ class Player:
         :return: Dictionary containing the amount of healing used.
         """
         # Placeholder: Automatically use available healing
-        healing_available = self.get_available_healing()
-        healing_to_use = min(healing_available, damage)
+        healing_available = min(self.heal.get_amount(), damage)
+        healing_to_use = 0
+        if healing_available > 0:
+            healing_to_use = self.interface.prompt_healing_amount(self, healing_available)
         if healing_to_use > 0:
             self.use_healing(healing_to_use)
         return {'healing': healing_to_use}
-
-    def get_available_healing(self):
-        """
-        Returns the available healing points for the player.
-        
-        :return: Integer representing available healing.
-        """
-        # Example: Sum of healing effects
-        return sum(effect.amount for effect in self.effects.values() if isinstance(effect, HealingEffect))
 
     def use_healing(self, amount):
         """
@@ -237,17 +252,9 @@ class Player:
         # Placeholder: Reduce available healing effects accordingly
         print(f"Player {self.id} uses {amount} healing.")
         # Implement actual healing consumption logic here
+        self.heal.remove(amount)
 
-    def take_damage(self, amount, damage_type='attack'):
-        """
-        Applies damage to the player.
-        
-        :param amount: Amount of damage to apply.
-        :param damage_type: Type of damage ('attack' or 'magic').
-        """
-        self.health -= amount
-        print(f"Player {self.id} takes {amount} {damage_type} damage. Remaining health: {self.health}")
-
+    
 
     def __str__(self):
         # Optional: Override to prevent displaying the hand when not needed

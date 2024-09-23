@@ -23,7 +23,6 @@ class Action(ABC):
         """
         pass
 
-    @abstractmethod
     def post_process(self, player):
         """
         Handles post-processing after the action is executed.
@@ -40,7 +39,7 @@ class AttackAction(Action):
         pass
     
     @abstractmethod
-    def available(self, player):
+    def available(self, player, attack_event=None):
         pass
 
     @abstractmethod
@@ -61,7 +60,7 @@ class AttackCardAction(AttackAction):
     def name(self):
         return f"Attack with {self.card.card_id} {self.card.name}"
 
-    def available(self, player):
+    def available(self, player, attack_event=None):
         return (
             self.card.is_attack() and
             (player.action_points.get("attack", 0) >= 1 or
@@ -96,9 +95,96 @@ class AttackCardAction(AttackAction):
         #     card=self.card
         # )
 
-        game_engine.execute_attack(attacker_id=player.id, defender_id=target.id, card=self.card)
+        game_engine.execute_attack(
+            attack_type="attack",
+            attacker=player, 
+            defender=target, 
+            card=self.card,
+            damage_amount=2,
+            can_not_counter=self.card.is_dark_extinction(),
+        )
+        return True
+
+class CounterCardAction(Action):
+    def __init__(self, card):
+        self.card = card
+
+    @property
+    def name(self):
+        return f"Counter with {self.card.card_id} {self.card.name}"
+
+    def available(self, player, attack_event):
+        return (
+            self.card.is_attack() and
+            (attack_event['card'].element == self.card.element or 
+            attack_event['card'].is_dark_extinction())
+        )
+
+    def execute(self, player, game_engine):
+        print(f"\nPlayer {player.id} is attempting a Counter Action with {self.card.name}.")
+        
+        # Select a valid target
+        opponents = [p for p in game_engine.players if p.team != player.team and p.can_be_attacked]
+        if not opponents:
+            print("No available opponents to counter. Action canceled.")
+            return False
+        
+        # Prompt player to select a target
+        target = game_engine.interface.prompt_target_selection(opponents)
+        if not target:
+            print("No valid target selected. Action canceled.")
+            return False
+        
+        # Play the attack card
+        player.hand.remove(self.card)
+        game_engine.deck.recycle([self.card])
+        print(f"Player {player.id} plays {self.card.name} to counter Player {target.id}.")
+
+        game_engine.execute_attack(
+            attack_type="counter",
+            attacker=player, 
+            defender=target, 
+            card=self.card,
+            damage_amount=2,
+            can_not_counter=self.card.is_dark_extinction(),
+            start_step=2,
+        )
 
         return True
+
+class HolyLightCardAction(Action):
+    def __init__(self, card):
+        self.card = card
+
+    @property
+    def name(self):
+        return f"Holy Light"
+
+    def available(self, player, attack_event=None):
+        return (
+            self.card.is_holy_light()
+        )
+
+    def execute(self, player, game_engine):
+        print(f"\nPlayer {player.id} uses Holy Light")
+        
+        player.hand.remove(self.card)
+        game_engine.deck.recycle([self.card])
+        
+        return True
+
+class NoResponseAction(Action):
+    @property
+    def name(self):
+        return f"No Response"
+
+    def available(self, player, attack_event=None):
+        return True
+
+    def execute(self, player, game_engine):
+        print(f"\nPlayer {player.id} has no response")
+        return True
+
 
 class MagicAction(Action):
     @property
@@ -107,7 +193,7 @@ class MagicAction(Action):
         pass
 
     @abstractmethod
-    def available(self, player):
+    def available(self, player, attack_event=None):
         pass
 
     @abstractmethod
@@ -128,7 +214,7 @@ class MagicCardAction(MagicAction):
     def name(self):
         return f"Cast {self.card.card_id} {self.card.name}"
 
-    def available(self, player):
+    def available(self, player, attack_event=None):
         return (
             (self.card.is_poison() or
              self.card.is_weakness() or

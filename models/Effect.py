@@ -1,8 +1,14 @@
 # models/Effect.py
 
+from abc import ABC, abstractmethod
+
 class Effect:
     def apply(self, player, **kwargs):
         pass
+
+    @abstractmethod
+    def __str__(self):
+        return "Effect"
 
 class PoisonEffect(Effect):
     def __init__(self, amount=1, duration=1):
@@ -21,6 +27,9 @@ class PoisonEffect(Effect):
             del player.effects['poison']
             print(f"PoisonEffect on Player {player.id} has expired.")
 
+    def __str__(self):
+        return "Poison"
+
 class WeaknessEffect(Effect):
     def __init__(self, duration=1):
         self.duration = duration
@@ -37,6 +46,9 @@ class WeaknessEffect(Effect):
             del player.effects['weakness']
             print(f"WeaknessEffect on Player {player.id} has expired.")
 
+    def __str__(self):
+        return "Weakness"
+
 class HolyShieldEffect(Effect):
     def __init__(self):
         self.active = True  # Indicates if the shield is active
@@ -51,6 +63,8 @@ class HolyShieldEffect(Effect):
             print("Holy Shield absorbed the attack and is now deactivated.")
             return True
         return False
+    def __str__(self):
+        return "Holy Shield"
 
 class MagicBulletEffect(Effect):
     def __init__(self, damage_increment=1):
@@ -60,19 +74,5 @@ class MagicBulletEffect(Effect):
         print(f"Magic Bullet cast by Player {player.id} towards Player {target.id}.")
         # Emit a new attack event with increased damage
         game_engine.event_manager.emit("attack", attacker=player, defender=target, card=None, damage_increment=self.damage_increment)
-
-class HealingEffect(Effect):
-    def __init__(self, amount=1):
-        self.amount = amount
-        self.duration = 1  # Number of turns the healing is active
-
-    def apply(self, player, **kwargs):
-        print(f"Player {player.id} gains {self.amount} healing effect.")
-        player.effects['healing'] = self
-
-    def process_turn(self, player):
-        # Example logic for processing healing effects each turn
-        self.duration -= 1
-        if self.duration <= 0:
-            del player.effects['healing']
-            print(f"Healing effect on Player {player.id} has expired.")
+    def __str__(self):
+        return "Magic Bullet"
