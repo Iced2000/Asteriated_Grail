@@ -3,76 +3,126 @@
 from abc import ABC, abstractmethod
 
 class Effect:
-    def apply(self, player, **kwargs):
+    @abstractmethod
+    def apply(self, *args, **kwargs):
+        pass
+
+    @abstractmethod
+    def execute(self, *args, **kwargs):
         pass
 
     @abstractmethod
     def __str__(self):
         return "Effect"
 
-class PoisonEffect(Effect):
-    def __init__(self, amount=1, duration=1):
-        self.amount = amount
-        self.duration = duration  # Number of turns the poison is active
-
+class BasicEffect(Effect):
+    @abstractmethod
     def apply(self, player, **kwargs):
-        print(f"Player {player.id} is poisoned for {self.duration} turn(s).")
-        player.effects['poison'] = self
+        pass
+    
+    @abstractmethod
+    def execute(self, *args, **kwargs):
+        pass
+    
+    @abstractmethod
+    def __str__(self):
+        return "BasicEffect"
 
-    def process_turn(self, player):
-        print(f"Applying PoisonEffect to Player {player.id}: {self.amount} damage.")
-        player.take_damage(self.amount, damage_type='magic')
-        self.duration -= 1
-        if self.duration <= 0:
-            del player.effects['poison']
-            print(f"PoisonEffect on Player {player.id} has expired.")
+class PoisonEffect(BasicEffect):
+    def __init__(self, source, target, card, amount=1):
+        self.source = source
+        self.target = target
+        self.card = card
+        self.amount = amount
+
+    def apply(self, *args, **kwargs):
+        print(f"Player {self.target.id} is poisoned by Player {self.source.id}.")
+        self.target.effects.append(self)
+
+    def execute(self, *args, **kwargs):
+        game_engine = kwargs.get("game_engine")
+        print(f"Applying PoisonEffect to Player {self.target.id}: {self.amount} damage.")
+
+        # TODO: Implement PoisonEffect
+        attack_event = {
+            'attack_type': "magic",
+            'attacker': self.source, 
+            'defender': self.target, 
+            'card': self.card,
+            'damage_amount': self.amount,
+        }
+        game_engine.process_damage_timeline(attack_event, start_step=3)
+
+        game_engine.deck.recycle([self.card])
 
     def __str__(self):
         return "Poison"
 
-class WeaknessEffect(Effect):
-    def __init__(self, duration=1):
-        self.duration = duration
+class WeaknessEffect(BasicEffect):
+    def __init__(self, source, target, card):
+        self.source = source
+        self.target = target
+        self.card = card
 
-    def apply(self, player, **kwargs):
-        print(f"Player {player.id} is weakened for {self.duration} turn(s).")
-        player.effects['weakness'] = self
+    def apply(self, *args, **kwargs):
+        print(f"Player {self.target.id} is weakened by Player {self.source.id}.")
+        self.target.effects.append(self)
 
-    def process_turn(self, player):
-        print(f"Applying WeaknessEffect to Player {player.id}.")
-        # Implement any weakness-related penalties here (e.g., reducing action points)
-        self.duration -= 1
-        if self.duration <= 0:
-            del player.effects['weakness']
-            print(f"WeaknessEffect on Player {player.id} has expired.")
+    def execute(self, *args, **kwargs):
+        """
+        Returns True if the turn should continue, False if the turn should end.
+        """
+        game_engine = kwargs.get("game_engine")
+        print(f"Applying WeaknessEffect to Player {self.target.id}.")
+        
+        valid_actions = ['skip turn', 'draw 3 cards']
+        action = game_engine.interface.prompt_action_selection(valid_actions)
+        if action == 'skip turn':
+            game_engine.deck.recycle([self.card])
+            return False
+        elif action == 'draw 3 cards':
+            attack_event = {
+                'attack_type': "draw",
+                'attacker': self.source, 
+                'defender': self.target,
+                'final_damage': 3,
+            }
+            game_engine.process_damage_timeline(attack_event, start_step=6)
+            game_engine.deck.recycle([self.card])
+            return True
 
     def __str__(self):
         return "Weakness"
 
-class HolyShieldEffect(Effect):
-    def __init__(self):
-        self.active = True  # Indicates if the shield is active
+class HolyShieldEffect(BasicEffect):
+    def __init__(self, source, target, card):
+        self.source = source
+        self.target = target
+        self.card = card
 
-    def apply(self, player, **kwargs):
-        print(f"Player {player.id} activates Holy Shield.")
-        player.effects['holy_shield'] = self
+    def apply(self, *args, **kwargs):
+        print(f"Player {self.target.id} activates Holy Shield.")
+        self.target.effects.append(self)
 
-    def absorb_attack(self):
-        if self.active:
-            self.active = False
-            print("Holy Shield absorbed the attack and is now deactivated.")
-            return True
-        return False
+    def execute(self, *args, **kwargs):
+        game_engine = kwargs.get("game_engine")
+        print(f"Applying HolyShieldEffect to Player {self.target.id}.")
+
+        game_engine.deck.recycle([self.card])
+
     def __str__(self):
         return "Holy Shield"
 
-class MagicBulletEffect(Effect):
-    def __init__(self, damage_increment=1):
-        self.damage_increment = damage_increment  # Damage added with each pass
 
-    def apply(self, player, target, game_engine, **kwargs):
-        print(f"Magic Bullet cast by Player {player.id} towards Player {target.id}.")
-        # Emit a new attack event with increased damage
-        game_engine.event_manager.emit("attack", attacker=player, defender=target, card=None, damage_increment=self.damage_increment)
+class SpecialEffect(Effect):
+    @abstractmethod
+    def apply(self, *args, **kwargs):
+        pass
+    
+    @abstractmethod
+    def execute(self, *args, **kwargs):
+        pass
+    
+    @abstractmethod
     def __str__(self):
-        return "Magic Bullet"
+        return "SpecialEffect"

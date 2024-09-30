@@ -4,7 +4,7 @@ class ConsoleInterface:
     def prompt_action_selection(self, actions):
         if not actions:
             print("\nNo available actions to select.")
-            return None
+            raise ValueError("No available actions to select.")
 
         print("\nAvailable Actions:")
         for idx, action in enumerate(actions):

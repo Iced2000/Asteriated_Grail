@@ -5,18 +5,21 @@ from models.Team import Team
 from models.Deck import Deck
 from models.Effect import HolyShieldEffect
 from views.ConsoleInterface import ConsoleInterface
-from models.Action import AttackAction, MagicAction, SynthesisAction, PurchaseAction, RefineAction, HolyLightCardAction, NoResponseAction, CounterCardAction
+from models.Action import (AttackAction, MagicAction, SynthesisAction, 
+                           PurchaseAction, RefineAction, HolyLightCardAction, 
+                           NoResponseAction, CounterCardAction, MagicBulletCounterCardAction)
 from game_engine.EventManager import EventManager
+from utils.decorators import subscribe
+
 
 class AgrGameEngine:
     def __init__(self, config):
         self.interface = ConsoleInterface()
         self.event_manager = EventManager()
         self.setup_game(config)
-        self.setup_damage_timeline()
-        self.setup_game_timeline()
         self.current_turn = 0
         self.running = True
+        self.set_timeline_subscriptions()
 
     def setup_game(self, config):
         # Initialize teams
@@ -34,128 +37,221 @@ class AgrGameEngine:
                 team = self.red_team
             else:
                 team = self.blue_team
-            player = Player(player_id=pid, team=team, deck=self.deck, interface=self.interface)
+            player = Player(player_id=pid, team=team, deck=self.deck, interface=self.interface, event_manager=self.event_manager)
             player.draw_initial_hand()
             self.players.append(player)
             team.add_player(player)
 
-    def setup_damage_timeline(self):
-        """
-        Sets up the damage timeline by subscribing relevant methods to each step.
-        This template allows easy addition of character-specific methods to the timeline.
-        """
-        # Step 1: Attack Activation
-        self.event_manager.subscribe("damage_timeline_step_1", self.on_attack_activation)
-        
-        # Step 2: Hit Determination
-        self.event_manager.subscribe("damage_timeline_step_2", self.on_hit_determination)
-        
-        # Step 3: Damage Calculation
-        self.event_manager.subscribe("damage_timeline_step_3", self.on_damage_calculation)
-        
-        # Step 4: Healing Response
-        self.event_manager.subscribe("damage_timeline_step_4", self.on_healing_response)
-        
-        # Step 5: Actual Damage Application
-        self.event_manager.subscribe("damage_timeline_step_5", self.on_actual_damage_application)
-        
-        # Step 6: Damage Reception
-        self.event_manager.subscribe("damage_timeline_step_6", self.on_damage_reception)
-        
-        # Add more subscriptions for other characters or effects here
+    def set_timeline_subscriptions(self):
+        for attr_name in dir(self):
+            attr = getattr(self, attr_name)
+            if callable(attr) and hasattr(attr, '_subscribe_event'):
+                event_type = attr._subscribe_event
+                listener_name = attr._subscribe_name(self)
+                self.event_manager.subscribe(event_type, attr, name=listener_name)
+                print(f"Subscribed {listener_name} to {event_type}")
 
-    def setup_game_timeline(self):
+    @subscribe("game_initialization")
+    def on_game_initialization(self):
+        print("Handling game initialization.")
+        # Add logic for game initialization here
+
+    @subscribe("before_round_start")
+    def on_before_round_start(self, player):
+        print(f"Handling before round start for Player {player.id}.")
+        # Add logic for before round start here
+
+    @subscribe("round_start_phase")
+    def on_round_start_phase(self, player):
+        print(f"Handling round start phase for Player {player.id}.")
+        # Add logic for round start phase here
+
+    @subscribe("before_action_phase")
+    def on_before_action_phase(self, player, game_engine):
+        print(f"Handling before action phase for Player {player.id}.")
+        # Add logic for before action phase here
+
+    @subscribe("action_phase_start")
+    def on_action_phase_start(self, player):
+        print(f"Handling action phase start for Player {player.id}.")
+        # Add logic for action phase start here
+
+    @subscribe("during_action_phase")
+    def on_during_action_phase(self, player):
+        print(f"Handling during action phase for Player {player.id}.")
+        player.perform_actions(self)
+        # Add logic for during action phase here
+
+    @subscribe("turn_end_phase")
+    def on_turn_end_phase(self, player):
+        print(f"Handling turn end phase for Player {player.id}.")
+        # Add logic for turn end phase here
+
+    # Damage Timeline
+    @subscribe("damage_timeline_step_1")
+    def on_attack_activation(self, attack_event):
         """
-        Sets up the game timeline by subscribing relevant methods to each event.
+        Handles Step 1: Attack Activation
         """
-        # Game start events
-        self.event_manager.subscribe("game_start", self.on_game_start)
+        attack_type = attack_event['attack_type']
+        attacker = attack_event['attacker']
+        defender = attack_event['defender']
+        card = attack_event.get('card', None)
+        # amount = attack_event.get('amount', 2)
+        # damage_type = attack_event.get('damage_type', 'attack')
+        print(f"[Step 1] {attacker.id} {attack_type} {defender.id} with {card}.")
+        # Additional logic for attack activation can be added here
+
+    @subscribe("damage_timeline_step_2")
+    def on_hit_determination(self, attack_event):
+        """
+        Handles Step 2: Hit Determination
+        """
+        attacker = attack_event['attacker']
+        defender = attack_event['defender']
+        if attack_event.get('forced hit', False):
+            attack_event['hit'] = True
+            self.event_manager.emit("damage_timeline_step_2_hit", attack_event=attack_event)
+            print(f"[Step 2] {attacker.id}'s attack forced hit {defender.id}.")
+            return
+
+        valid_counter_actions = defender.get_valid_counter_actions(attack_event)
+        if len(valid_counter_actions) < 0:
+            raise Exception("No valid counter actions found.")
         
-        # Round start events
-        self.event_manager.subscribe("round_start", self.on_round_start)
+        print(f"[Step 2] {defender.id} has valid counter actions: {valid_counter_actions}.")
+        defender_action = self.interface.prompt_defender_action(defender, attacker, valid_counter_actions)
+        if isinstance(defender_action, CounterCardAction):
+            attack_event['hit'] = False
+            self.event_manager.emit("damage_timeline_step_2_miss", attack_event=attack_event)
+            print(f"[Step 2] {defender.id} counters with {defender_action.card.name}.")
+            defender_action.execute(player=defender, game_engine=self, attack_event=attack_event)
+            return False
+        elif isinstance(defender_action, MagicBulletCounterCardAction):
+            attack_event['hit'] = False
+            self.event_manager.emit("damage_timeline_step_2_miss", attack_event=attack_event)
+            print(f"[Step 2] {defender.id} counters with {defender_action.card.name}.")
+            defender_action.execute(player=defender, game_engine=self, attack_event=attack_event)
+            return False
+        elif isinstance(defender_action, HolyLightCardAction):
+            attack_event['hit'] = False
+            self.event_manager.emit("damage_timeline_step_2_miss", attack_event=attack_event)
+            print(f"[Step 2] {defender.id} uses Holy Light to cancel the attack.")
+            return False
+        elif isinstance(defender_action, NoResponseAction):
+            defender_holy_shield_effect = defender.get_holy_shield_effect()
+            if defender_holy_shield_effect:
+                attack_event['hit'] = False
+                defender_holy_shield_effect.execute()
+                self.event_manager.emit("damage_timeline_step_2_miss", attack_event=attack_event)
+                print(f"[Step 2] {defender.id} has Holy Shield, attack is blocked.")
+                return False
+            else:
+                attack_event['hit'] = True
+                self.event_manager.emit("damage_timeline_step_2_hit", attack_event=attack_event)
+                print(f"[Step 2] {defender.id} takes the hit.")
+        else:
+            raise Exception(f"Invalid action type: {type(defender_action)}")
         
-        # Before action events
-        self.event_manager.subscribe("before_action", self.on_before_action)
+    @subscribe("damage_timeline_step_2_hit")
+    def on_hit_determination_hit(self, attack_event):
+        """
+        Handles Step 2: Hit Determination
+        """
+        attacker = attack_event['attacker']
+        defender = attack_event['defender']
+        print(f"[Step 2] {attacker.id}'s attack hits {defender.id}.")
+        # Additional logic for hit determination can be added here
+    
+    @subscribe("damage_timeline_step_2_miss")
+    def on_hit_determination_miss(self, attack_event):
+        """
+        Handles Step 2: Miss Determination
+        """
+        attacker = attack_event['attacker']
+        defender = attack_event['defender']
+        print(f"[Step 2] {attacker.id}'s attack misses {defender.id}.")
+        # Additional logic for miss determination can be added here
+    
+    @subscribe("damage_timeline_step_3")
+    def on_damage_calculation(self, attack_event):
+        """
+        Handles Step 3: Damage Calculation
+        """
+        if attack_event.get('hit', True) is False:
+            raise Exception("Damage calculation should only happen when there is a hit.")
         
-        # Action phase events
-        self.event_manager.subscribe("action_phase", self.on_action_phase)
+        print(f"[Step 3] Calculated damage: {attack_event['damage_amount']}.")
+
+    @subscribe("damage_timeline_step_4")
+    def on_healing_response(self, attack_event):
+        """
+        Handles Step 4: Healing Response
+        """
+        if attack_event['damage_amount'] <= 0:
+            print("[Step 4] No healing response needed.")
+            return
         
-        # Round end events
-        self.event_manager.subscribe("round_end", self.on_round_end)
+        defender = attack_event['defender']
+        damage = attack_event['damage_amount']
+        print(f"[Step 4] {defender.id} has {damage} damage to respond to.")
         
-        # Turn end events
-        self.event_manager.subscribe("turn_end", self.on_turn_end)
+        # Defender decides to use healing
+        healing_used = defender.respond_to_damage(damage)
+        attack_event['healing_used'] = healing_used.get('healing', 0)
+        print(f"[Step 4] {defender.id} uses {attack_event['healing_used']} healing.")
+
+    @subscribe("damage_timeline_step_5")
+    def on_actual_damage_application(self, attack_event):
+        """
+        Handles Step 5: Actual Damage Application
+        """
+        damage = attack_event['damage_amount'] - attack_event.get('healing_used', 0)
+        damage = max(damage, 0)  # Prevent negative damage
+        attack_event['final_damage'] = damage
+        print(f"[Step 5] {attack_event['defender']} will receive {damage} damage after healing.")
+
+    @subscribe("damage_timeline_step_6")
+    def on_damage_reception(self, attack_event):
+        """
+        Handles Step 6: Damage Reception
+        """
+        final_damage = attack_event.get('final_damage', 0)
+        if final_damage > 0:
+            defender = attack_event['defender']
+            defender.take_damage(final_damage, damage_type=attack_event.get('attack_type', 'attack'))
+        else:
+            print("[Step 6] No actual damage to apply.")
         
-        # Add more subscriptions for other game events here
+        attacker_team = attack_event['attacker'].team
+        if attack_event.get('attack_type', 'attack') == 'attack':
+            attacker_team.jewels.add_jewel(gem_add=1)
+            print(f"Attacker's team gains 1 Gem for a successful attack.")
+        elif attack_event.get('attack_type', 'attack') == 'counter':
+            attacker_team.jewels.add_jewel(crystal_add=1)
+            print(f"Attacker's team gains 1 Crystal for a successful counterattack.")
+
 
     def start_game(self):
+        self.event_manager.sort_listeners()
         print("\n=== Game Start ===\n")
-        self.event_manager.emit("game_start")
+        self.event_manager.emit("game_initialization")
         while self.running:
             current_player = self.players[self.current_turn]
             self.display_public_information()
             print(f"\n--- Player {current_player.id}'s Turn ---")
             
             # Begin player's turn
-            self.event_manager.emit("round_start", player=current_player)
-            self.event_manager.emit("before_action", player=current_player)
-            self.event_manager.emit("action_phase", player=current_player)
-            self.event_manager.emit("round_end", player=current_player)
-            if self.check_game_end():
-                break
-            
+            self.event_manager.emit("before_round_start", player=current_player)
+            self.event_manager.emit("round_start_phase", player=current_player)
+            continue_turn = self.event_manager.emit("before_action_phase", player=current_player, game_engine=self)
+            if continue_turn:
+                self.event_manager.emit("action_phase_start", player=current_player)
+                self.event_manager.emit("during_action_phase", player=current_player)
+            self.event_manager.emit("turn_end_phase", player=current_player)
             self.next_turn()
-
-    def handle_attack_or_counter(self, attacker, defender, card, is_counter=False):
-        action_type = "counterattack" if is_counter else "attack"
-        print(f"\nPlayer {attacker.id} performs an {action_type} on Player {defender.id} with {card.name}.")
-
-        valid_counter_cards = defender.get_valid_counter_cards(card)
-        defender_action = self.interface.prompt_defender_action(defender, attacker, has_counter=bool(valid_counter_cards))
-        
-        if defender_action == "counterattack" and valid_counter_cards:
-            counter_card = self.interface.prompt_card_selection(valid_counter_cards)
-            if counter_card:
-                print(f"Player {defender.id} counters with {counter_card.name}.")
-                if counter_card.is_holy_light():
-                    print(f"The attack is canceled by {counter_card.name}. No jewels are gained.")
-                    return
-                self.event_manager.emit(
-                    "counter",
-                    attacker=defender,
-                    defender=attacker,
-                    card=counter_card,
-                    is_counter=True
-                )
-                return
-            else:
-                print("No counter card selected. Defender takes the hit.")
-                self.apply_damage(attacker, defender, card, is_counter)
-        elif defender_action == "take_damage" or not valid_counter_cards:
-            print(f"{'Defender has no valid counter cards. ' if not valid_counter_cards else ''}Defender takes the hit.")
-            self.apply_damage(attacker, defender, card, is_counter)
-        else:
-            print("Invalid defender action. Defender takes the hit.")
-            self.apply_damage(attacker, defender, card, is_counter)
-
-    def apply_damage(self, attacker, defender, card, is_counter=False):
-        base_damage = getattr(card, 'damage_value', 2)
-        total_damage = base_damage
-        defender.take_damage(total_damage)
-        
-        if is_counter:
-            if attacker.team.jewels.can_add(crystal_add=1):
-                attacker.team.jewels.add_jewel(crystal_add=1)
-                print(f"{attacker.team} gains 1 Crystal for a successful counterattack.")
-            else:
-                print(f"{attacker.team} cannot add more jewels. Jewels are full.")
-        else:
-            if attacker.team.jewels.can_add(gem_add=1):
-                attacker.team.jewels.add_jewel(gem_add=1)
-                print(f"{attacker.team} gains 1 Gem for a successful attack.")
-            else:
-                print(f"{attacker.team} cannot add more jewels. Jewels are full.")
-
+       
+    # Game Logic
     def process_damage_timeline(self, attack_event, start_step=1):
         """
         Processes the damage timeline starting from the specified step.
@@ -176,122 +272,9 @@ class AgrGameEngine:
         ]
         
         for step in steps[start_step-1:]:
-            self.event_manager.emit(step, attack_event=attack_event)
-        
-        # After processing, check for game end conditions
-        self.check_game_end()
-
-    def on_attack_activation(self, attack_event):
-        """
-        Handles Step 1: Attack Activation
-        """
-        attack_type = attack_event.get('attack_type', 'attack')
-        attacker = attack_event['attacker']
-        defender = attack_event['defender']
-        card = attack_event.get('card')
-        amount = attack_event.get('amount', 2)
-        # damage_type = attack_event.get('damage_type', 'attack')
-        print(f"[Step 1] {attacker.id} {attack_type} {defender.id} with {card.name}.")
-        # Additional logic for attack activation can be added here
-
-    def on_hit_determination(self, attack_event):
-        """
-        Handles Step 2: Hit Determination
-        """
-        attacker = attack_event['attacker']
-        defender = attack_event['defender']
-        if attack_event.get('forced hit', False):
-            attack_event['hit'] = True
-            print(f"[Step 2] {attacker.id}'s attack forced hit {defender.id}.")
-            return
-
-        valid_counter_actions = defender.get_valid_counter_actions(attack_event)
-        if valid_counter_actions:
-            print(f"[Step 2] {defender.id} has valid counter actions: {valid_counter_actions}.")
-            defender_action = self.interface.prompt_defender_action(defender, attacker, valid_counter_actions)
-            if isinstance(defender_action, CounterCardAction):
-                attack_event['hit'] = False
-                print(f"[Step 2] {defender.id} counters with {defender_action.card.name}.")
-                defender_action.execute(defender, self)
-            elif isinstance(defender_action, HolyLightCardAction):
-                attack_event['hit'] = False
-                print(f"[Step 2] {defender.id} uses Holy Light to cancel the attack.")
-            elif isinstance(defender_action, HolyShieldEffect):
-                attack_event['hit'] = False
-                print(f"[Step 2] {defender.id} uses Holy Shield to cancel the attack.")
-                defender_action.execute(defender, self)
-            elif isinstance(defender_action, NoResponseAction):
-                attack_event['hit'] = True
-                print(f"[Step 2] {defender.id} takes the hit.")
-        else:
-            attack_event['hit'] = True
-            print(f"[Step 2] {defender.id} takes the hit.")
-
-    def on_damage_calculation(self, attack_event):
-        """
-        Handles Step 3: Damage Calculation
-        """
-        if not attack_event.get('hit'):
-            attack_event['damage_amount'] = 0
-            print("[Step 3] No damage to calculate due to missed attack.")
-            return
-        
-        print(f"[Step 3] Calculated damage: {attack_event['damage_amount']}.")
-
-    def on_healing_response(self, attack_event):
-        """
-        Handles Step 4: Healing Response
-        """
-        if attack_event['damage_amount'] <= 0:
-            print("[Step 4] No healing response needed.")
-            return
-        
-        defender = attack_event['defender']
-        damage = attack_event['damage_amount']
-        print(f"[Step 4] {defender.id} has {damage} damage to respond to.")
-        
-        # Defender decides to use healing
-        healing_used = defender.respond_to_damage(damage)
-        attack_event['healing_used'] = healing_used.get('healing', 0)
-        print(f"[Step 4] {defender.id} uses {attack_event['healing_used']} healing.")
-
-    def on_actual_damage_application(self, attack_event):
-        """
-        Handles Step 5: Actual Damage Application
-        """
-        damage = attack_event['damage_amount'] - attack_event.get('healing_used', 0)
-        damage = max(damage, 0)  # Prevent negative damage
-        attack_event['final_damage'] = damage
-        print(f"[Step 5] {attack_event['defender']} will receive {damage} damage after healing.")
-
-    def on_damage_reception(self, attack_event):
-        """
-        Handles Step 6: Damage Reception
-        """
-        final_damage = attack_event.get('final_damage', 0)
-        if final_damage > 0:
-            defender = attack_event['defender']
-            defender.take_damage(final_damage, damage_type=attack_event.get('attack_type', 'attack'))
-            attacker_team = attack_event['attacker'].team
-            if attack_event.get('attack_type', 'attack') == 'attack':
-                attacker_team.jewels.add_jewel(gem_add=1)
-                print(f"Attacker's team gains 1 Gem for a successful attack.")
-            elif attack_event.get('attack_type', 'attack') == 'counter':
-                attacker_team.jewels.add_jewel(crystal_add=1)
-                print(f"Attacker's team gains 1 Crystal for a successful counterattack.")
-        else:
-            print("[Step 6] No actual damage to apply.")
-
-    def execute_attack(self, attack_type, attacker, defender, card, damage_amount, can_not_counter=False, start_step=1):
-        attack_event = {
-            'attack_type': attack_type,
-            'attacker': attacker,
-            'defender': defender,
-            'card': card,
-            'damage_amount': damage_amount,
-            'can_not_counter': can_not_counter,
-        }
-        self.process_damage_timeline(attack_event, start_step=start_step)
+            if not self.event_manager.emit(step, attack_event=attack_event):
+                print(f"Damage timeline processing stopped at {step}.")
+                break
 
     def check_game_end(self):
         """
@@ -330,50 +313,36 @@ class AgrGameEngine:
     def next_turn(self):
         self.current_turn = (self.current_turn + 1) % len(self.players)
         print(f"--- Next Turn: Player {self.players[self.current_turn].id} ---")
-
-    def on_game_start(self):
-        """
-        Handles game start events.
-        """
-        print("Game has started. Initializing game state.")
-        # Add logic for game start events here
-
-    def on_round_start(self, player):
-        """
-        Handles round start events.
-        """
-        print(f"Round start for Player {player.id}.")
-        # Add logic for round start events here
-        player.round_start()
-
-    def on_before_action(self, player):
-        """
-        Handles before action events.
-        """
-        print(f"Before action phase for Player {player.id}.")
-        # Add logic for before action events here
-        player.before_action()
-
-    def on_action_phase(self, player):
-        """
-        Handles action phase events.
-        """
-        print(f"Action phase for Player {player.id}.")
-        # Add logic for action phase events here
-        player.perform_actions(self)
-
-    def on_round_end(self, player):
-        """
-        Handles round end events.
-        """
-        print(f"Round end for Player {player.id}.")
-        # Add logic for round end events here
-        player.round_end()
-
-    def on_turn_end(self, player):
-        """
-        Handles turn end events.
-        """
-        print(f"Turn end for Player {player.id}.")
-        # Add logic for turn end events here
+    
+    def get_magic_bullet_target(self, player):
+        current_player_index = self.players.index(player)
+        num_players = len(self.players)
         
+        for i in range(1, num_players):
+            next_player_index = (current_player_index + i) % num_players
+            next_player = self.players[next_player_index]
+            
+            if next_player.team != player.team:
+                return next_player
+        
+        raise ValueError("No player from a different team found")
+    
+    def get_attack_target(self, player, counter=False, attacker=None):
+        if counter:
+            candidates = [p for p in self.players if p.team != player.team and p.can_be_attacked and p != attacker]
+        else:
+            candidates = [p for p in self.players if p.team != player.team and p.can_be_attacked]
+        
+        if not candidates:
+            raise ValueError("No available opponents to counter. Action canceled.")
+        
+        return candidates
+
+    def get_seats_order(self, player):
+        current_player_index = self.players.index(player)
+        num_players = len(self.players)
+        seats = []
+        for i in range(1, num_players):
+            next_player_index = (current_player_index + i) % num_players
+            seats.append(self.players[next_player_index].id)
+        return seats
