@@ -2,7 +2,7 @@
 
 from .Jewel import AgrJewel
 from .Action import (
-    AttackAction, MagicAction, SynthesisAction,
+    SynthesisAction,
     PurchaseAction, RefineAction,
     AttackCardAction, MagicCardAction, HolyLightCardAction,
     CounterCardAction, NoResponseAction, MagicBulletCounterCardAction
@@ -12,15 +12,16 @@ from .Heal import Heal
 from utils.decorators import subscribe
 
 class Player:
-    def __init__(self, player_id, team, deck, interface, event_manager):
+    def __init__(self, player_id, team, deck, interface, event_manager, game_engine):
         self.id = player_id
         self.team = team
         self.deck = deck
         self.interface = interface
         self.event_manager = event_manager
+        self.game_engine = game_engine
         self.heal = Heal()
         self.hand = []
-        self.jewels = AgrJewel(maxJewel=3)  # Player's jewel capacity is 3
+        self.jewels = AgrJewel(interface=interface, maxJewel=3)  # Player's jewel capacity is 3
         self.max_hand_size = 6  # Define maximum hand size as per rules
         self.effects = []  # List to hold active effects
         self.can_be_attacked = True
@@ -40,32 +41,32 @@ class Player:
                 event_type = attr._subscribe_event
                 listener_name = attr._subscribe_name(self)
                 self.event_manager.subscribe(event_type, attr, name=listener_name)
-                print(f"Subscribed {listener_name} to {event_type}")
+                self.interface.send_message(f"Subscribed {listener_name} to {event_type}", debug=True)
 
     @subscribe("before_action_phase", name=lambda self: f"poison_trigger_player_{self.id}")
-    def poison_trigger(self, player, game_engine):
+    def poison_trigger(self, player):
         if player.id != self.id:
             return
-        print(f'processing poison trigger for player {self.id}')
+        self.interface.send_message(f'processing poison trigger for player {self.id}', debug=True)
         poison_effects = [effect for effect in self.effects if isinstance(effect, PoisonEffect)]
-        seats = game_engine.get_seats_order(self)
+        seats = self.game_engine.get_seats_order(self)
         poison_effects_sorted = sorted(poison_effects, key=lambda effect: seats.index(effect.source.id))
         for poison_effect in poison_effects_sorted:
-            poison_effect.execute(game_engine=game_engine)
+            poison_effect.execute()
 
     @subscribe("before_action_phase", name=lambda self: f"weakness_trigger_player_{self.id}")
-    def weakness_trigger(self, player, game_engine):
+    def weakness_trigger(self, player):
         if player.id != self.id:
             return
-        print(f'processing weakness trigger for player {self.id}')
+        self.interface.send_message(f'processing weakness trigger for player {self.id}', debug=True)
         weakness_effects = [effect for effect in self.effects if isinstance(effect, WeaknessEffect)]
         if len(weakness_effects) > 1:
             raise Exception("Player has more than one weakness effect.")
         if len(weakness_effects) != 0:
-            continue_turn = weakness_effects[0].execute(game_engine=game_engine)
+            continue_turn = weakness_effects[0].execute()
             return continue_turn
     
-    def perform_actions(self, game_engine):
+    def perform_actions(self):
         """
         Allows the player to perform multiple actions in their turn until they choose to stop
         or run out of available actions.
@@ -74,45 +75,42 @@ class Player:
         available_actions = self.get_available_actions()
         while True:
             if not available_actions:
-                print("No available actions to perform.")
                 raise Exception("No available actions to perform.")
 
-            selected_action = self.interface.prompt_action_selection(available_actions)
+            selected_action = self.interface.prompt_action_selection(available_actions, player_id=self.id)
             if not selected_action:
-                print("No action selected. Ending turn.")
                 raise Exception("Player chose not to select an action.")
             
             if selected_action.is_no_response():
-                print(f"Player {self.id} chose to end their turn.")
+                self.interface.send_message(f"Player {self.id} chose to end their turn.", broadcast=True)
                 break
             
-            success = selected_action.execute(player=self, game_engine=game_engine)
+            success = selected_action.execute()
             if success:
-                selected_action.on_action_success(player=self)
+                selected_action.on_action_success()
                 self.event_manager.emit('after_action_phase', player=self, action=selected_action)
             else:
-                print("Action failed. Returning to turn start.")
                 raise Exception("Action execution failed.")
             # Action points are deducted within execute_action if successful
             
             available_actions = self.get_available_actions()
             if not available_actions:
-                print("No more available actions.")
+                self.interface.send_message("No more available actions.", debug=True)
                 break
             else:
-                available_actions.append(NoResponseAction())
+                available_actions.append(NoResponseAction(player=self, game_engine=self.game_engine))
     
     @subscribe("after_action_phase", name=lambda self: f"on_after_action_phase_player_{self.id}")
     def on_after_action_phase(self, player, action):
         if player.id != self.id:
             return
-        print(f"Player {self.id} performed action: {action}")
+        self.interface.send_message(f"Player {self.id} performed action: {action}", debug=True)
 
     @subscribe("turn_end_phase", name=lambda self: f"reset_actions_player_{self.id}")
     def reset_actions(self, player):
         if player.id != self.id:
             return
-        print(f'resetting actions for player {self.id}')
+        self.interface.send_message(f'resetting actions for player {self.id}', debug=True)
         self.action_points = {
             "general": 1,
             "attack": 0,
@@ -124,21 +122,15 @@ class Player:
 
     def draw_initial_hand(self):
         self.hand = self.deck.deal(3)
-        print(f"Player {self.id} drew initial hand: {[card.name for card in self.hand]}")
+        self.interface.send_message(f"Player {self.id} drew initial hand: {[card.name for card in self.hand]}", debug=True)
 
-    # def process_effects_start_of_turn(self):
-    #     # Process ongoing effects at the start of the player's turn
-    #     for effect in self.effects:
-    #         if hasattr(effect, 'process_turn'):
-    #             effect.process_turn(self)
-
-    def apply_effect(self, effect):
-        effect_name = type(effect).__name__
-        self.effects[effect_name] = effect
-        print(f"Player {self.id} received effect: {effect_name}.")
+    # def apply_effect(self, effect):
+    #     effect_name = type(effect).__name__
+    #     self.effects[effect_name] = effect
+    #     self.interface.send_message(f"Player {self.id} received effect: {effect_name}.")
 
     def take_damage(self, amount, damage_type='attack'):
-        print(f"Player {self.id} takes {amount} {damage_type} damage.")
+        self.interface.send_message(f"Player {self.id} takes {amount} {damage_type} damage.", debug=True)
         
         # Draw cards equal to the damage taken
         cards_drawn = self.deck.deal(amount)
@@ -153,20 +145,22 @@ class Player:
         Returns a list of actions.
         """
         available_actions = []
-        for action in [SynthesisAction(), PurchaseAction(), RefineAction()]:
-            if action.available(player=self):
+        for action in [SynthesisAction(player=self, game_engine=self.game_engine), 
+                       PurchaseAction(player=self, game_engine=self.game_engine), 
+                       RefineAction(player=self, game_engine=self.game_engine)]:
+            if action.available():
                 available_actions.append(action)
         
         # Include card-based actions
         for card in self.hand:
             if card.is_attack():
-                action = AttackCardAction(card)
+                action = AttackCardAction(player=self, game_engine=self.game_engine, card=card)
             elif card.is_magic():
-                action = MagicCardAction(card)
+                action = MagicCardAction(player=self, game_engine=self.game_engine, card=card)
             else:
                 raise Exception("Card is not an attack or magic card.")
 
-            if action.available(player=self):
+            if action.available():
                 available_actions.append(action)
 
         return available_actions
@@ -182,77 +176,59 @@ class Player:
 
     def receive_cards(self, cards):
         self.hand.extend(cards)
-        print(f"Player {self.id} received cards: {[card.name for card in cards]}")
+        self.interface.send_message(f"Player {self.id} received cards: {[card.name for card in cards]}", debug=True)
 
     def handle_exploding_hand(self):
         if len(self.hand) > self.max_hand_size:
             excess_cards = len(self.hand) - self.max_hand_size
-            print(f"Player {self.id} has exceeded the hand limit by {excess_cards} card(s). Must discard down to {self.max_hand_size} cards.")
+            self.interface.send_message(f"Player {self.id} has exceeded the hand limit by {excess_cards} card(s). Must discard down to {self.max_hand_size} cards.", player_id=self.id)
 
-            # Allow the player to discard excess cards
-            for _ in range(excess_cards):
-                while True:
-                    print(f"Current Hand: {[card.name for card in self.hand]}")
-                    try:
-                        discard_choice = int(input("Select a card to discard by number: "))
-                        if 0 <= discard_choice < len(self.hand):
-                            discarded_card = self.hand.pop(discard_choice)
-                            self.deck.recycle([discarded_card])
-                            print(f"Discarded card: {discarded_card.name}")
-                            # Deduct morale based on discarded cards
-                            self.team.add_morale(-1)
-                            break
-                        else:
-                            print("Invalid selection. Try again.")
-                    except ValueError:
-                        print("Invalid input. Please enter a number.")
+            discard_choice = self.interface.prompt_multiple_action_selection(self.hand, excess_cards, player_id=self.id)
+            for card in discard_choice:
+                self.hand.remove(card)
+                self.deck.recycle(card)
+                self.team.add_morale(-1)
 
-            print(f"Player {self.id}'s hand size is now {len(self.hand)}.")
+            self.interface.send_message(f"Player {self.id}'s hand size is now {len(self.hand)}.", debug=True)
 
     def get_public_info(self):
         """
         Returns a string containing the player's public information without revealing the hand.
         Includes hand size.
         """
-        return (f"Player {self.id}, Jewels: {self.jewels}, \
-Hand Size: {len(self.hand)}, Effects: {self.effects}, \
+        return (f"Player {self.id}, Jewels(G/C): {self.jewels}, \
+Hand: {len(self.hand)}/{self.max_hand_size}, Effects: {self.effects}, \
 Heal: {self.heal}")
 
     def show_hand(self):
         """
         Displays the player's current hand.
         """
-        print(f"\n--- Player {self.id}'s Hand ---")
+        self.interface.send_message(f"\n--- Player {self.id}'s Hand ---", player_id=self.id)
         for idx, card in enumerate(self.hand):
-            print(f"{idx}: {card}")
-        print("--------------------------\n")
+            self.interface.send_message(f"{idx}: {card}", player_id=self.id)
+        self.interface.send_message("--------------------------\n", player_id=self.id)
 
     def get_valid_counter_actions(self, attack_event):
         """
         Returns a list of valid counter cards based on the attack card.
         """
-        valid_counter_actions = [NoResponseAction()]
+        valid_counter_actions = [NoResponseAction(player=self, game_engine=self.game_engine)]
 
         for card in self.hand:
             if card.is_attack():
                 if attack_event.get('can_not_counter', False):
                     continue
-                action = CounterCardAction(card)
+                action = CounterCardAction(player=self, game_engine=self.game_engine, attack_event=attack_event, card=card)
             elif card.is_holy_light():
-                action = HolyLightCardAction(card)
+                action = HolyLightCardAction(player=self, game_engine=self.game_engine, attack_event=attack_event, card=card)
             elif card.is_magic():
-                action = MagicBulletCounterCardAction(card)
+                action = MagicBulletCounterCardAction(player=self, game_engine=self.game_engine, attack_event=attack_event, card=card)
             else:
                 raise Exception("Card is not an attack or magic card.")
 
-            if action.available(player=self, attack_event=attack_event):
+            if action.available():
                 valid_counter_actions.append(action)
-        
-        # for effect in self.effects:
-        #     if isinstance(effect, HolyShieldEffect):
-        #         valid_counter_actions.append(effect)
-        #         if any(isinstance(action, NoResponseAction) for action in valid_counter_actions):
-        #             valid_counter_actions = [action for action in valid_counter_actions if not isinstance(action, NoResponseAction)]
         
         return valid_counter_actions
 
@@ -267,7 +243,9 @@ Heal: {self.heal}")
         healing_available = min(self.heal.get_amount(), damage)
         healing_to_use = 0
         if healing_available > 0:
-            healing_to_use = self.interface.prompt_healing_amount(self, healing_available)
+            self.interface.send_message(f"Player {self.id} has {healing_available} healing available.", debug=True)
+            actions = [i for i in range(healing_available + 1)]
+            healing_to_use = self.interface.prompt_action_selection(actions, player_id=self.id)
         if healing_to_use > 0:
             self.use_healing(healing_to_use)
         return {'healing': healing_to_use}
@@ -279,7 +257,7 @@ Heal: {self.heal}")
         :param amount: Amount of healing to use.
         """
         # Placeholder: Reduce available healing effects accordingly
-        print(f"Player {self.id} uses {amount} healing.")
+        self.interface.send_message(f"Player {self.id} uses {amount} healing.", debug=True)
         # Implement actual healing consumption logic here
         self.heal.remove(amount)
 
@@ -314,4 +292,4 @@ Heal: {self.heal}")
 #         if self.player in [attack['attacker'], attack['defender']]:
 #             original_damage = attack['damage_amount']
 #             attack['damage_amount'] += 1  # Example: Increase damage by 1
-#             print(f"[Character {self.player.id}] Modified damage from {original_damage} to {attack['damage_amount']}.")
+#             self.interface.send_message(f"[Character {self.player.id}] Modified damage from {original_damage} to {attack['damage_amount']}.")

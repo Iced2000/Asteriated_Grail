@@ -3,7 +3,8 @@ from timeline.damage_timeline import DamageTimeline
 from timeline.game_timeline import GameTimeline
 
 class EventManager:
-    def __init__(self):
+    def __init__(self, console_interface):
+        self.interface = console_interface
         self.listeners = {}
         for event_type in GameTimeline.keys():
             self.listeners[event_type] = []
@@ -22,7 +23,7 @@ class EventManager:
             raise ValueError(f"Event type '{event_type}' is not in the game or damage timeline.")
         listener_name = name if name else listener.__name__
         self.listeners[event_type].append((listener_name, listener))
-        print(f"Listener '{listener_name}' subscribed to {event_type}.")
+        self.interface.send_message(f"Listener '{listener_name}' subscribed to {event_type}.", debug=True)
     
     def emit(self, event_type, **kwargs):
         """
@@ -34,12 +35,12 @@ class EventManager:
         :return: True if all listeners processed successfully, False if any listener returned False.
         """
         listeners = self.listeners.get(event_type, [])
-        print(f"Emitting event '{event_type}' to {len(listeners)} listener(s).")
+        self.interface.send_message(f"Emitting event '{event_type}' to {len(listeners)} listener(s).", debug=True)
         all_successful = True
         for listener_name, listener in listeners:
             result = listener(**kwargs)
             if result is False:
-                print(f"Listener {listener_name} returned False for event '{event_type}'.")
+                self.interface.send_message(f"Listener {listener_name} returned False for event '{event_type}'.", debug=True)
                 all_successful = False
         return all_successful
     
@@ -61,18 +62,18 @@ class EventManager:
             sorted_listeners = [(name, listener_dict[name]) for name in order if name in listener_dict]
             remaining_listeners = [(name, listener) for name, listener in listener_dict.items() if name not in order]
             self.listeners[event_type] = sorted_listeners + remaining_listeners
-            print(f"Listeners for {event_type} sorted in the given order.")
+            self.interface.send_message(f"Listeners for {event_type} sorted in the given order.", debug=True)
 
 """
 # Define some example listeners
 def listener1(**kwargs):
-    print("Listener 1 executed")
+    self.interface.send_message("Listener 1 executed")
 
 def listener2(**kwargs):
-    print("Listener 2 executed")
+    self.interface.send_message("Listener 2 executed")
 
 def listener3(**kwargs):
-    print("Listener 3 executed")
+    self.interface.send_message("Listener 3 executed")
 
 # Subscribe listeners
 event_manager = EventManager()

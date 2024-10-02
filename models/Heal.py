@@ -19,5 +19,5 @@ class Heal:
         return self.amount
     
     def __str__(self):
-        return f"Heal: {self.amount}"
+        return f"{self.amount}/{self.max_amount}"
 

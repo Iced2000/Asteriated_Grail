@@ -4,7 +4,8 @@ import random
 from .Card import Card
 
 class Deck:
-    def __init__(self, card_file_path):
+    def __init__(self, card_file_path, interface):
+        self.interface = interface
         self.cards = self.load_cards(card_file_path)
         self.discards = []
         self.shuffle()
@@ -26,14 +27,14 @@ class Deck:
                             unique_skill2=parts[6] if len(parts) > 6 else None
                         )
                         cards.append(card)
-            print(f"Loaded {len(cards)} cards into the deck.")
+            self.interface.send_message(f"Loaded {len(cards)} cards into the deck.", debug=True)
         except FileNotFoundError:
-            print(f"Card file {path} not found.")
+            self.interface.send_message(f"Card file {path} not found.", debug=True)
         return cards
 
     def shuffle(self):
         random.shuffle(self.cards)
-        print("Deck shuffled.")
+        self.interface.send_message("Deck shuffled.", debug=True)
 
     def deal(self, num):
         dealt_cards = []
@@ -42,21 +43,21 @@ class Deck:
                 self.reset_deck()
             if self.cards:
                 dealt_cards.append(self.cards.pop())
-        print(f"Dealt {len(dealt_cards)} card(s).")
+        self.interface.send_message(f"Dealt {len(dealt_cards)} card(s).", debug=True)
         return dealt_cards
 
     def recycle(self, cards):
         self.discards.extend(cards)
-        print(f"Recycled {len(cards)} card(s) into discards.")
+        self.interface.send_message(f"Recycled {len(cards)} card(s) into discards.", debug=True)
 
     def reset_deck(self):
         if self.discards:
             self.cards = self.discards.copy()
             self.discards = []
             self.shuffle()
-            print("Deck reset from discards.")
+            self.interface.send_message("Deck reset from discards.", debug=True)
         else:
-            print("No cards to reset the deck.")
+            self.interface.send_message("No cards to reset the deck.", debug=True)
 
     def __str__(self):
         return f"Deck has {len(self.cards)} card(s)."

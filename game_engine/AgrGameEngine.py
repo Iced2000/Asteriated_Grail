@@ -4,30 +4,34 @@ from models.Player import Player
 from models.Team import Team
 from models.Deck import Deck
 from models.Effect import HolyShieldEffect
-from views.ConsoleInterface import ConsoleInterface
-from models.Action import (AttackAction, MagicAction, SynthesisAction, 
-                           PurchaseAction, RefineAction, HolyLightCardAction, 
-                           NoResponseAction, CounterCardAction, MagicBulletCounterCardAction)
+from views.ConsoleInterface import LocalConsoleInterface, NetworkedConsoleInterface
+from models.Action import (HolyLightCardAction, NoResponseAction, 
+                           CounterCardAction, MagicBulletCounterCardAction)
 from game_engine.EventManager import EventManager
 from utils.decorators import subscribe
 
 
 class AgrGameEngine:
     def __init__(self, config):
-        self.interface = ConsoleInterface()
-        self.event_manager = EventManager()
+        self.networked = config.get('networked', False)
+        if self.networked:
+            self.interface = NetworkedConsoleInterface(game_server=config.get('game_server', None), debug=config.get('debug', False))
+        else:
+            self.interface = LocalConsoleInterface(debug=config.get('debug', False))
+        self.event_manager = EventManager(self.interface)
         self.setup_game(config)
         self.current_turn = 0
         self.running = True
+        
         self.set_timeline_subscriptions()
 
     def setup_game(self, config):
         # Initialize teams
-        self.red_team = Team(is_red=True)
-        self.blue_team = Team(is_red=False)
+        self.red_team = Team(is_red=True, interface=self.interface)
+        self.blue_team = Team(is_red=False, interface=self.interface)
         
         # Initialize single deck
-        self.deck = Deck(config['deck_path'])
+        self.deck = Deck(config['deck_path'], interface=self.interface)
         
         # Initialize players
         self.players = []
@@ -37,7 +41,9 @@ class AgrGameEngine:
                 team = self.red_team
             else:
                 team = self.blue_team
-            player = Player(player_id=pid, team=team, deck=self.deck, interface=self.interface, event_manager=self.event_manager)
+            player = Player(player_id=pid, team=team, deck=self.deck, 
+                             interface=self.interface, event_manager=self.event_manager, 
+                             game_engine=self)
             player.draw_initial_hand()
             self.players.append(player)
             team.add_player(player)
@@ -49,42 +55,42 @@ class AgrGameEngine:
                 event_type = attr._subscribe_event
                 listener_name = attr._subscribe_name(self)
                 self.event_manager.subscribe(event_type, attr, name=listener_name)
-                print(f"Subscribed {listener_name} to {event_type}")
+                self.interface.send_message(f"Subscribed {listener_name} to {event_type}", debug=True)
 
     @subscribe("game_initialization")
     def on_game_initialization(self):
-        print("Handling game initialization.")
+        self.interface.send_message("Handling game initialization.", debug=True)
         # Add logic for game initialization here
 
     @subscribe("before_round_start")
     def on_before_round_start(self, player):
-        print(f"Handling before round start for Player {player.id}.")
+        self.interface.send_message(f"Handling before round start for Player {player.id}.", debug=True)
         # Add logic for before round start here
 
     @subscribe("round_start_phase")
     def on_round_start_phase(self, player):
-        print(f"Handling round start phase for Player {player.id}.")
+        self.interface.send_message(f"Handling round start phase for Player {player.id}.", debug=True)
         # Add logic for round start phase here
 
     @subscribe("before_action_phase")
-    def on_before_action_phase(self, player, game_engine):
-        print(f"Handling before action phase for Player {player.id}.")
+    def on_before_action_phase(self, player):
+        self.interface.send_message(f"Handling before action phase for Player {player.id}.", debug=True)
         # Add logic for before action phase here
 
     @subscribe("action_phase_start")
     def on_action_phase_start(self, player):
-        print(f"Handling action phase start for Player {player.id}.")
+        self.interface.send_message(f"Handling action phase start for Player {player.id}.", debug=True)
         # Add logic for action phase start here
 
     @subscribe("during_action_phase")
     def on_during_action_phase(self, player):
-        print(f"Handling during action phase for Player {player.id}.")
-        player.perform_actions(self)
+        self.interface.send_message(f"Handling during action phase for Player {player.id}.", debug=True)
+        player.perform_actions()
         # Add logic for during action phase here
 
     @subscribe("turn_end_phase")
     def on_turn_end_phase(self, player):
-        print(f"Handling turn end phase for Player {player.id}.")
+        self.interface.send_message(f"Handling turn end phase for Player {player.id}.", debug=True)
         # Add logic for turn end phase here
 
     # Damage Timeline
@@ -97,9 +103,7 @@ class AgrGameEngine:
         attacker = attack_event['attacker']
         defender = attack_event['defender']
         card = attack_event.get('card', None)
-        # amount = attack_event.get('amount', 2)
-        # damage_type = attack_event.get('damage_type', 'attack')
-        print(f"[Step 1] {attacker.id} {attack_type} {defender.id} with {card}.")
+        self.interface.send_message(f"[Step 1] {attacker.id} {attack_type} {defender.id} with {card}.", broadcast=True)
         # Additional logic for attack activation can be added here
 
     @subscribe("damage_timeline_step_2")
@@ -111,45 +115,35 @@ class AgrGameEngine:
         defender = attack_event['defender']
         if attack_event.get('forced hit', False):
             attack_event['hit'] = True
+            self.interface.send_message(f"[Step 2] {attacker.id}'s attack forced hit {defender.id}.", broadcast=True)
             self.event_manager.emit("damage_timeline_step_2_hit", attack_event=attack_event)
-            print(f"[Step 2] {attacker.id}'s attack forced hit {defender.id}.")
             return
 
         valid_counter_actions = defender.get_valid_counter_actions(attack_event)
         if len(valid_counter_actions) < 0:
             raise Exception("No valid counter actions found.")
         
-        print(f"[Step 2] {defender.id} has valid counter actions: {valid_counter_actions}.")
-        defender_action = self.interface.prompt_defender_action(defender, attacker, valid_counter_actions)
-        if isinstance(defender_action, CounterCardAction):
+        defender.show_hand()
+        defender_action = self.interface.prompt_action_selection(valid_counter_actions, defender.id)
+        if isinstance(defender_action, CounterCardAction) or isinstance(defender_action, MagicBulletCounterCardAction) or isinstance(defender_action, HolyLightCardAction):
             attack_event['hit'] = False
+            self.interface.send_message(f"[Step 2] {defender.id} counters with {defender_action.card.name}.", broadcast=True)
             self.event_manager.emit("damage_timeline_step_2_miss", attack_event=attack_event)
-            print(f"[Step 2] {defender.id} counters with {defender_action.card.name}.")
             defender_action.execute(player=defender, game_engine=self, attack_event=attack_event)
             return False
-        elif isinstance(defender_action, MagicBulletCounterCardAction):
-            attack_event['hit'] = False
-            self.event_manager.emit("damage_timeline_step_2_miss", attack_event=attack_event)
-            print(f"[Step 2] {defender.id} counters with {defender_action.card.name}.")
-            defender_action.execute(player=defender, game_engine=self, attack_event=attack_event)
-            return False
-        elif isinstance(defender_action, HolyLightCardAction):
-            attack_event['hit'] = False
-            self.event_manager.emit("damage_timeline_step_2_miss", attack_event=attack_event)
-            print(f"[Step 2] {defender.id} uses Holy Light to cancel the attack.")
-            return False
+        
         elif isinstance(defender_action, NoResponseAction):
             defender_holy_shield_effect = defender.get_holy_shield_effect()
             if defender_holy_shield_effect:
                 attack_event['hit'] = False
-                defender_holy_shield_effect.execute()
+                self.interface.send_message(f"[Step 2] {defender.id} has Holy Shield, attack is blocked.", broadcast=True)
                 self.event_manager.emit("damage_timeline_step_2_miss", attack_event=attack_event)
-                print(f"[Step 2] {defender.id} has Holy Shield, attack is blocked.")
+                defender_holy_shield_effect.execute()
                 return False
             else:
                 attack_event['hit'] = True
+                self.interface.send_message(f"[Step 2] {defender.id} takes the hit.", broadcast=True)
                 self.event_manager.emit("damage_timeline_step_2_hit", attack_event=attack_event)
-                print(f"[Step 2] {defender.id} takes the hit.")
         else:
             raise Exception(f"Invalid action type: {type(defender_action)}")
         
@@ -160,7 +154,7 @@ class AgrGameEngine:
         """
         attacker = attack_event['attacker']
         defender = attack_event['defender']
-        print(f"[Step 2] {attacker.id}'s attack hits {defender.id}.")
+        self.interface.send_message(f"[Step 2] {attacker.id}'s attack hits {defender.id}.", debug=True)
         # Additional logic for hit determination can be added here
     
     @subscribe("damage_timeline_step_2_miss")
@@ -170,7 +164,7 @@ class AgrGameEngine:
         """
         attacker = attack_event['attacker']
         defender = attack_event['defender']
-        print(f"[Step 2] {attacker.id}'s attack misses {defender.id}.")
+        self.interface.send_message(f"[Step 2] {attacker.id}'s attack misses {defender.id}.", debug=True)
         # Additional logic for miss determination can be added here
     
     @subscribe("damage_timeline_step_3")
@@ -181,7 +175,7 @@ class AgrGameEngine:
         if attack_event.get('hit', True) is False:
             raise Exception("Damage calculation should only happen when there is a hit.")
         
-        print(f"[Step 3] Calculated damage: {attack_event['damage_amount']}.")
+        self.interface.send_message(f"[Step 3] Calculated damage: {attack_event['damage_amount']}.", debug=True)
 
     @subscribe("damage_timeline_step_4")
     def on_healing_response(self, attack_event):
@@ -189,17 +183,17 @@ class AgrGameEngine:
         Handles Step 4: Healing Response
         """
         if attack_event['damage_amount'] <= 0:
-            print("[Step 4] No healing response needed.")
+            self.interface.send_message("[Step 4] No healing response needed.", debug=True)
             return
         
         defender = attack_event['defender']
         damage = attack_event['damage_amount']
-        print(f"[Step 4] {defender.id} has {damage} damage to respond to.")
+        self.interface.send_message(f"[Step 4] {defender.id} has {damage} damage to respond to.", debug=True)
         
         # Defender decides to use healing
         healing_used = defender.respond_to_damage(damage)
         attack_event['healing_used'] = healing_used.get('healing', 0)
-        print(f"[Step 4] {defender.id} uses {attack_event['healing_used']} healing.")
+        self.interface.send_message(f"[Step 4] {defender.id} uses {attack_event['healing_used']} healing.", broadcast=True)
 
     @subscribe("damage_timeline_step_5")
     def on_actual_damage_application(self, attack_event):
@@ -207,9 +201,10 @@ class AgrGameEngine:
         Handles Step 5: Actual Damage Application
         """
         damage = attack_event['damage_amount'] - attack_event.get('healing_used', 0)
-        damage = max(damage, 0)  # Prevent negative damage
+        if damage < 0:
+            raise Exception("Damage should not be negative.")
         attack_event['final_damage'] = damage
-        print(f"[Step 5] {attack_event['defender']} will receive {damage} damage after healing.")
+        self.interface.send_message(f"[Step 5] {attack_event['defender']} will receive {damage} damage after healing.", debug=True)
 
     @subscribe("damage_timeline_step_6")
     def on_damage_reception(self, attack_event):
@@ -221,30 +216,30 @@ class AgrGameEngine:
             defender = attack_event['defender']
             defender.take_damage(final_damage, damage_type=attack_event.get('attack_type', 'attack'))
         else:
-            print("[Step 6] No actual damage to apply.")
+            self.interface.send_message("[Step 6] No actual damage to apply.", debug=True)
         
         attacker_team = attack_event['attacker'].team
         if attack_event.get('attack_type', 'attack') == 'attack':
             attacker_team.jewels.add_jewel(gem_add=1)
-            print(f"Attacker's team gains 1 Gem for a successful attack.")
+            self.interface.send_message(f"Attacker's team gains 1 Gem for a successful attack.", debug=True)
         elif attack_event.get('attack_type', 'attack') == 'counter':
             attacker_team.jewels.add_jewel(crystal_add=1)
-            print(f"Attacker's team gains 1 Crystal for a successful counterattack.")
+            self.interface.send_message(f"Attacker's team gains 1 Crystal for a successful counterattack.", debug=True)
 
 
     def start_game(self):
         self.event_manager.sort_listeners()
-        print("\n=== Game Start ===\n")
+        self.interface.send_message("\n=== Game Start ===\n", debug=True)
         self.event_manager.emit("game_initialization")
         while self.running:
             current_player = self.players[self.current_turn]
             self.display_public_information()
-            print(f"\n--- Player {current_player.id}'s Turn ---")
+            self.interface.send_message(f"\n--- Player {current_player.id}'s Turn ---", broadcast=True)
             
             # Begin player's turn
             self.event_manager.emit("before_round_start", player=current_player)
             self.event_manager.emit("round_start_phase", player=current_player)
-            continue_turn = self.event_manager.emit("before_action_phase", player=current_player, game_engine=self)
+            continue_turn = self.event_manager.emit("before_action_phase", player=current_player)
             if continue_turn:
                 self.event_manager.emit("action_phase_start", player=current_player)
                 self.event_manager.emit("during_action_phase", player=current_player)
@@ -260,7 +255,7 @@ class AgrGameEngine:
                              Expected keys: 'attacker', 'defender', 'card', 'damage_type'
         :param start_step: The step to start processing from (1 to 6).
         """
-        print(f"\n=== Processing Damage Timeline for Attack: {attack_event} ===")
+        self.interface.send_message(f"\n=== Processing Damage Timeline for Attack: {attack_event} ===", debug=True)
         
         steps = [
             "damage_timeline_step_1",
@@ -273,7 +268,7 @@ class AgrGameEngine:
         
         for step in steps[start_step-1:]:
             if not self.event_manager.emit(step, attack_event=attack_event):
-                print(f"Damage timeline processing stopped at {step}.")
+                self.interface.send_message(f"Damage timeline processing stopped at {step}.", debug=True)
                 break
 
     def check_game_end(self):
@@ -282,7 +277,7 @@ class AgrGameEngine:
         """
         for team in [self.red_team, self.blue_team]:
             if team.has_won():
-                print(f"\n=== {team} has won the game! ===")
+                self.interface.send_message(f"\n=== {team} has won the game! ===", broadcast=True)
                 self.running = False
                 break
 
@@ -292,14 +287,14 @@ class AgrGameEngine:
         
         :param winning_team: The team that has met the victory conditions.
         """
-        print(f"Game Over! {winning_team} wins!")
+        self.interface.send_message(f"Game Over! {winning_team} wins!", broadcast=True)
         # Additional logic to handle game end (e.g., resetting, saving scores)
 
     def display_public_information(self):
-        print("\n--- Public Information ---")
-        print(f"{self.red_team}")
-        print(f"{self.blue_team}")
-        print("--------------------------\n")
+        self.interface.send_message("\n--- Public Information ---", broadcast=True)
+        self.interface.send_message(f"{self.red_team}", broadcast=True)
+        self.interface.send_message(f"{self.blue_team}", broadcast=True)
+        self.interface.send_message("--------------------------\n", broadcast=True)
 
     def get_opposite_team(self, team):
         """
@@ -312,7 +307,7 @@ class AgrGameEngine:
 
     def next_turn(self):
         self.current_turn = (self.current_turn + 1) % len(self.players)
-        print(f"--- Next Turn: Player {self.players[self.current_turn].id} ---")
+        self.interface.send_message(f"--- Next Turn: Player {self.players[self.current_turn].id} ---", broadcast=True)
     
     def get_magic_bullet_target(self, player):
         current_player_index = self.players.index(player)
