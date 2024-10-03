@@ -8,9 +8,8 @@ from views.ConsoleInterface import LocalConsoleInterface, NetworkedConsoleInterf
 from models.Action import (HolyLightCardAction, NoResponseAction, 
                            CounterCardAction, MagicBulletCounterCardAction)
 from game_engine.EventManager import EventManager
-from timeline.game_timeline import GameTimeline
-from timeline.damage_timeline import DamageTimeline
-from utils.decorators import subscribe
+from timeline import GameTimeline, DamageTimeline
+from factories.character_factory import CharacterFactory
 
 
 class AgrGameEngine:
@@ -37,15 +36,18 @@ class AgrGameEngine:
         
         # Initialize players
         self.players = []
-        for pid in range(1, config['num_players'] + 1):
-            # Assign players to teams based on config
-            if pid in config.get('red_players', []):
-                team = self.red_team
-            else:
-                team = self.blue_team
-            player = Player(player_id=pid, team=team, deck=self.deck, 
-                             interface=self.interface, event_manager=self.event_manager, 
-                             game_engine=self)
+        for player_config in config['player']:
+            team = self.red_team if player_config['team'] == 'red' else self.blue_team
+            character_config = {
+                'character_type': player_config['character_type'],
+                'player_id': player_config['pid'],
+                'team': team,
+                'deck': self.deck,
+                'interface': self.interface,
+                'event_manager': self.event_manager,
+                'game_engine': self
+            }
+            player = CharacterFactory.create_character(character_config)
             player.draw_initial_hand()
             self.players.append(player)
             team.add_player(player)
@@ -126,7 +128,7 @@ class AgrGameEngine:
         if len(valid_counter_actions) < 0:
             raise Exception("No valid counter actions found.")
         
-        defender.show_hand()
+        defender.hand.show_hand()
         defender_action = self.interface.prompt_action_selection(valid_counter_actions, defender.id)
         if isinstance(defender_action, (CounterCardAction, MagicBulletCounterCardAction, HolyLightCardAction)):
             attack_event['hit'] = False
@@ -136,7 +138,7 @@ class AgrGameEngine:
             return False
         
         elif isinstance(defender_action, NoResponseAction):
-            defender_holy_shield_effect = defender.get_holy_shield_effect()
+            defender_holy_shield_effect = defender.effects.get_effects(HolyShieldEffect)
             if defender_holy_shield_effect:
                 attack_event['hit'] = False
                 self.interface.send_message(f"[Step 2] {defender.id} has Holy Shield, attack is blocked.", broadcast=True)
@@ -251,25 +253,6 @@ class AgrGameEngine:
             if not self.event_manager.emit(step, attack_event=attack_event):
                 self.interface.send_message(f"Damage timeline processing stopped at {step}.", debug=True)
                 break
-
-    def check_game_end(self):
-        """
-        Checks if game end conditions are met.
-        """
-        for team in [self.red_team, self.blue_team]:
-            if team.has_won():
-                self.interface.send_message(f"\n=== {team} has won the game! ===", broadcast=True)
-                self.running = False
-                break
-
-    def end_game(self, winning_team):
-        """
-        Ends the game and declares the winning team.
-        
-        :param winning_team: The team that has met the victory conditions.
-        """
-        self.interface.send_message(f"Game Over! {winning_team} wins!", broadcast=True)
-        # Additional logic to handle game end (e.g., resetting, saving scores)
 
     def display_public_information(self):
         self.interface.send_message("\n--- Public Information ---", broadcast=True)

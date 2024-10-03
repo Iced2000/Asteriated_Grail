@@ -9,24 +9,22 @@ from .Action import (
 )
 from .Effect import HolyShieldEffect, PoisonEffect, WeaknessEffect
 from .Heal import Heal
-from utils.decorators import subscribe
-from game_engine.EventManager import Event
-from timeline.game_timeline import GameTimeline
-from timeline.damage_timeline import DamageTimeline
+from timeline import GameTimeline, DamageTimeline
+from .PlayerHand import PlayerHand
+from .PlayerEffects import PlayerEffects
 
 class Player:
-    def __init__(self, player_id, team, deck, interface, event_manager, game_engine):
-        self.id = player_id
-        self.team = team
-        self.deck = deck
-        self.interface = interface
-        self.event_manager = event_manager
-        self.game_engine = game_engine
+    def __init__(self, character_config):
+        self.id = character_config['player_id']
+        self.team = character_config['team']
+        self.deck = character_config['deck']
+        self.interface = character_config['interface']
+        self.event_manager = character_config['event_manager']
+        self.game_engine = character_config['game_engine']
         self.heal = Heal()
-        self.hand = []
-        self.jewels = AgrJewel(interface=interface, maxJewel=3)  # Player's jewel capacity is 3
-        self.max_hand_size = 6  # Define maximum hand size as per rules
-        self.effects = []  # List to hold active effects
+        self.hand = PlayerHand(self)
+        self.effects = PlayerEffects()
+        self.jewels = AgrJewel(interface=self.interface, maxJewel=3)  # Player's jewel capacity is 3
         self.can_be_attacked = True
         self.action_points = {
             "general": 1,
@@ -54,7 +52,7 @@ class Player:
         if event.data['player'].id != self.id:
             return
         self.interface.send_message(f'processing poison trigger for player {self.id}', debug=True)
-        poison_effects = [effect for effect in self.effects if isinstance(effect, PoisonEffect)]
+        poison_effects = self.effects.get_effects(PoisonEffect)
         seats = self.game_engine.get_seats_order(self)
         poison_effects_sorted = sorted(poison_effects, key=lambda effect: seats.index(effect.source.id))
         for poison_effect in poison_effects_sorted:
@@ -64,10 +62,10 @@ class Player:
         if event.data['player'].id != self.id:
             return
         self.interface.send_message(f'processing weakness trigger for player {self.id}', debug=True)
-        weakness_effects = [effect for effect in self.effects if isinstance(effect, WeaknessEffect)]
+        weakness_effects = self.effects.get_effects(WeaknessEffect)
         if len(weakness_effects) > 1:
             raise Exception("Player has more than one weakness effect.")
-        if len(weakness_effects) != 0:
+        if len(weakness_effects) == 1:
             continue_turn = weakness_effects[0].execute()
             return continue_turn
     
@@ -76,7 +74,7 @@ class Player:
         Allows the player to perform multiple actions in their turn until they choose to stop
         or run out of available actions.
         """
-        self.show_hand()
+        self.hand.show_hand()
         available_actions = self.get_available_actions()
         while True:
             if not available_actions:
@@ -120,23 +118,17 @@ class Player:
 
 
     def draw_initial_hand(self):
-        self.hand = self.deck.deal(6)
-        self.interface.send_message(f"Player {self.id} drew initial hand: {[card.name for card in self.hand]}", debug=True)
-
-    # def apply_effect(self, effect):
-    #     effect_name = type(effect).__name__
-    #     self.effects[effect_name] = effect
-    #     self.interface.send_message(f"Player {self.id} received effect: {effect_name}.")
+        initial_cards = self.deck.deal(6)
+        self.hand.add_cards(initial_cards)
+        self.interface.send_message(f"Player {self.id} drew initial hand.", debug=True)
 
     def take_damage(self, amount, damage_type='attack'):
         self.interface.send_message(f"Player {self.id} takes {amount} {damage_type} damage.", debug=True)
         
         # Draw cards equal to the damage taken
         cards_drawn = self.deck.deal(amount)
-        self.receive_cards(cards_drawn)
+        self.hand.add_cards(cards_drawn)
         
-        # Handle exploding hand if hand size exceeds the limit
-        self.handle_exploding_hand()
 
     def get_available_actions(self):
         """
@@ -151,7 +143,7 @@ class Player:
                 available_actions.append(action)
         
         # Include card-based actions
-        for card in self.hand:
+        for card in self.hand.get_cards():
             if card.is_attack():
                 action = AttackCardAction(player=self, game_engine=self.game_engine, card=card)
             elif card.is_magic_bullet():
@@ -165,51 +157,15 @@ class Player:
                 available_actions.append(action)
 
         return available_actions
-
     
-
-    def can_draw_cards(self, number):
-        return (len(self.hand) + number) <= self.max_hand_size
-
-    def can_play_magic(self):
-        # Check if player has any magic cards in hand
-        return any(card.is_magic() for card in self.hand)
-
-    def receive_cards(self, cards):
-        self.hand.extend(cards)
-        self.interface.send_message(f"Player {self.id} received cards: {[card.name for card in cards]}", debug=True)
-
-    def handle_exploding_hand(self):
-        if len(self.hand) > self.max_hand_size:
-            excess_cards = len(self.hand) - self.max_hand_size
-            self.interface.send_message(f"Player {self.id} has exceeded the hand limit by {excess_cards} card(s). Must discard down to {self.max_hand_size} cards.", player_id=self.id)
-
-            discard_choice = self.interface.prompt_multiple_action_selection(self.hand, min_selections=excess_cards, 
-                                                                             max_selections=excess_cards, player_id=self.id)
-            for card in discard_choice:
-                self.hand.remove(card)
-                self.deck.recycle([card])
-                self.team.add_morale(-1)
-
-            self.interface.send_message(f"Player {self.id}'s hand size is now {len(self.hand)}.", debug=True)
-
     def get_public_info(self):
         """
         Returns a string containing the player's public information without revealing the hand.
         Includes hand size.
         """
         return (f"Player {self.id}, Jewels(G/C): {self.jewels}, \
-Hand: {len(self.hand)}/{self.max_hand_size}, Effects: {self.effects}, \
+Hand: {self.hand.size()}/{self.hand.max_size}, Effects: {self.effects}, \
 Heal: {self.heal}")
-
-    def show_hand(self):
-        """
-        Displays the player's current hand.
-        """
-        self.interface.send_message(f"\n--- Player {self.id}'s Hand ---", player_id=self.id)
-        for idx, card in enumerate(self.hand):
-            self.interface.send_message(f"{idx}: {card}", player_id=self.id)
-        self.interface.send_message("--------------------------\n", player_id=self.id)
 
     def get_valid_counter_actions(self, attack_event):
         """
@@ -217,7 +173,7 @@ Heal: {self.heal}")
         """
         valid_counter_actions = [NoResponseAction(player=self, game_engine=self.game_engine)]
 
-        for card in self.hand:
+        for card in self.hand.get_cards():
             if card.is_attack():
                 if attack_event.get('can_not_counter', False):
                     continue
@@ -263,35 +219,7 @@ Heal: {self.heal}")
         # Implement actual healing consumption logic here
         self.heal.remove(amount)
 
-    def get_holy_shield_effect(self):
-        for effect in self.effects:
-            if isinstance(effect, HolyShieldEffect):
-                return effect
-        return None
-    
-
     def __str__(self):
         # Optional: Override to prevent displaying the hand when not needed
         return self.get_public_info()
     
-
-
-# class Character(Player):
-#     def __init__(self, player):
-#         self.player = player
-#         self.setup_subscriptions()
-
-#     def setup_subscriptions(self):
-#         """
-#         Subscribes character-specific methods to damage timeline events.
-#         """
-#         self.player.team.game_engine.event_manager.subscribe("damage_timeline_step_3", self.modify_damage_calculation)
-
-#     def modify_damage_calculation(self, attack):
-#         """
-#         Example character-specific method that modifies damage calculation.
-#         """
-#         if self.player in [attack['attacker'], attack['defender']]:
-#             original_damage = attack['damage_amount']
-#             attack['damage_amount'] += 1  # Example: Increase damage by 1
-#             self.interface.send_message(f"[Character {self.player.id}] Modified damage from {original_damage} to {attack['damage_amount']}.")

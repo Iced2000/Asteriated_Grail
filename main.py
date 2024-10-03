@@ -15,9 +15,12 @@ def main():
 
     if args.mode == "local":
         config = {
-            'num_players': 4,
-            'red_players': [1,3],
-            'blue_players': [2,4],
+            'player': [
+                {'pid': 1, 'character_type': 'BasePlayer', 'team': 'red'},
+                {'pid': 2, 'character_type': 'BasePlayer', 'team': 'blue'},
+                {'pid': 3, 'character_type': 'BasePlayer', 'team': 'red'},
+                {'pid': 4, 'character_type': 'BasePlayer', 'team': 'blue'},
+            ],
             'deck_path': "cardDB.txt",
             'networked': False,
             'debug': True

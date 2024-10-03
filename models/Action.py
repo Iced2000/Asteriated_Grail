@@ -106,7 +106,7 @@ class AttackCardAction(AttackAction):
         if not target:
             raise Exception("No valid target selected. Action canceled.")
         
-        self.player.hand.remove(self.card)
+        self.player.hand.remove_card(self.card)
         
         attack_event = {
             'attack_type': "attack",
@@ -169,7 +169,7 @@ class MagicCardAction(MagicAction):
         if not target:
             raise Exception("No valid target selected. Action canceled.")
         
-        self.player.hand.remove(self.card)
+        self.player.hand.remove_card(self.card)
         
         if self.card.is_poison():
             effect = PoisonEffect(source=self.player, target=target, game_engine=self.game_engine, card=self.card)
@@ -206,7 +206,7 @@ class MagicBulletCardAction(MagicAction):
         
         target = self.game_engine.get_magic_bullet_target(self.player)
         
-        self.player.hand.remove(self.card)
+        self.player.hand.remove_card(self.card)
 
         attack_event = {
             'attack_type': "magic_bullet",
@@ -244,7 +244,7 @@ class SynthesisAction(SpecialAction):
         return "Synthesize"
 
     def available(self):
-        return (self.player.can_draw_cards(3) and
+        return (self.player.hand.can_draw_cards(3) and
                self.player.team.jewels.total_jewels() >= 3 and
                 (self.player.action_points["general"] >= 1 or 
                  self.player.action_points["special"] >= 1))
@@ -254,7 +254,7 @@ class SynthesisAction(SpecialAction):
 
         if self.player.team.jewels.total_jewels() < 3:
             raise Exception("Not enough jewels to perform 'Synthesize'. Action canceled.")
-        if not self.player.can_draw_cards(3):
+        if not self.player.hand.can_draw_cards(3):
             raise Exception(f"Cannot perform 'Synthesize' as drawing 3 cards would exceed hand size of {self.player.max_hand_size}. Action canceled.")
 
         valid_combinations = self.player.team.jewels.get_jewel_combination(min_num=3, max_num=3, gem_min=0, crystal_min=0)
@@ -270,7 +270,7 @@ class SynthesisAction(SpecialAction):
         drawn_cards = self.player.deck.deal(3)
         if not drawn_cards:
             raise Exception("No cards drawn. Synthesis action ends.")
-        self.player.receive_cards(drawn_cards)
+        self.player.hand.add_cards(drawn_cards)
 
         self.player.team.add_grail(1)
         self.interface.send_message(f"{self.player.team} synthesized 1 Grail. Current Grail: {self.player.team.grail}", broadcast=True)
@@ -286,20 +286,23 @@ class PurchaseAction(SpecialAction):
         return "Purchase"
 
     def available(self):
-        return (self.player.can_draw_cards(3) and
+        return (self.player.hand.can_draw_cards(3) and
                 (self.player.action_points["general"] >= 1 or 
                  self.player.action_points["special"] >= 1))
         
     def execute(self):
         self.interface.send_message(f"\nPlayer {self.player.id} is attempting a Purchase Action.", debug=True)
 
-        if not self.player.can_draw_cards(3):
-            raise Exception(f"Cannot perform 'Purchase' as drawing 3 cards would exceed hand size of {self.player.max_hand_size}. Action canceled.")
+        if not self.player.hand.can_draw_cards(3):
+            raise Exception(f"Cannot perform 'Purchase' as drawing 3 cards would exceed hand size of {self.player.hand.max_size}. Action canceled.")
 
         drawn_cards = self.player.deck.deal(3)
         if not drawn_cards:
             raise Exception("No cards drawn. Purchase action ends.")
-        self.player.receive_cards(drawn_cards)
+
+        self.interface.send_message(f"Player {self.player.id} drew: {[card.name for card in drawn_cards]}", player_id=self.player.id)
+        
+        self.player.hand.add_cards(drawn_cards)
         
         current_jewels = self.player.team.jewels.total_jewels()
         if current_jewels >= self.player.team.jewels.max_jewel:
@@ -445,7 +448,7 @@ class HolyLightCardAction(CounterAction):
     def execute(self):
         self.interface.send_message(f"\nPlayer {self.player.id} uses Holy Light", broadcast=True)
         
-        self.player.hand.remove(self.card)
+        self.player.hand.remove_card(self.card)
         self.game_engine.deck.recycle([self.card])
         
         return True
@@ -470,7 +473,7 @@ class MagicBulletCounterCardAction(CounterAction):
         
         target = self.game_engine.get_magic_bullet_target(self.player)
         
-        self.player.hand.remove(self.card)
+        self.player.hand.remove_card(self.card)
 
         attack_event = {
             'attack_type': "magic_bullet",

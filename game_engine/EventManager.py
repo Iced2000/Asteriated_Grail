@@ -1,7 +1,6 @@
 # game_engine/EventManager.py
 from collections import defaultdict
-from timeline.damage_timeline import DamageTimeline
-from timeline.game_timeline import GameTimeline
+from timeline import GameTimeline, DamageTimeline
 
 class Event:
     def __init__(self, event_type, **data):

@@ -45,7 +45,7 @@ class PoisonEffect(BasicEffect):
 
     def apply(self):
         self.interface.send_message(f"Player {self.target.id} is poisoned by Player {self.source.id}.", debug=True)
-        self.target.effects.append(self)
+        self.target.effects.add_effect(self)
 
     def execute(self):
         self.interface.send_message(f"Applying PoisonEffect to Player {self.target.id} by Player {self.source.id}: {self.amount} damage.", broadcast=True)
@@ -59,7 +59,7 @@ class PoisonEffect(BasicEffect):
         }
         self.game_engine.process_damage_timeline(attack_event, start_step=3)
         self.game_engine.deck.recycle([self.card])
-        self.target.effects.remove(self)
+        self.target.effects.remove_effect(self)
 
     def __str__(self):
         return "Poison"
@@ -67,7 +67,7 @@ class PoisonEffect(BasicEffect):
 class WeaknessEffect(BasicEffect):
     def apply(self):
         self.interface.send_message(f"Player {self.target.id} is weakened by Player {self.source.id}.", debug=True)
-        self.target.effects.append(self)
+        self.target.effects.add_effect(self)
 
     def execute(self):
         """
@@ -78,7 +78,7 @@ class WeaknessEffect(BasicEffect):
         valid_actions = ['skip turn', 'draw 3 cards']
         action = self.interface.prompt_action_selection(valid_actions, player_id=self.target.id)
         if action == 'skip turn':
-            self.target.effects.remove(self)
+            self.target.effects.remove_effect(self)
             self.game_engine.deck.recycle([self.card])
             return False
         elif action == 'draw 3 cards':
@@ -89,7 +89,7 @@ class WeaknessEffect(BasicEffect):
                 'final_damage': 3,
             }
             self.game_engine.process_damage_timeline(attack_event, start_step=6)
-            self.target.effects.remove(self)
+            self.target.effects.remove_effect(self)
             self.game_engine.deck.recycle([self.card])
             return True
 
@@ -99,11 +99,11 @@ class WeaknessEffect(BasicEffect):
 class HolyShieldEffect(BasicEffect):
     def apply(self):
         self.interface.send_message(f"Player {self.target.id} activates Holy Shield.", debug=True)
-        self.target.effects.append(self)
+        self.target.effects.add_effect(self)
 
     def execute(self):
         self.interface.send_message(f"Applying HolyShieldEffect to Player {self.target.id}.", broadcast=True)
-        self.target.effects.remove(self)
+        self.target.effects.remove_effect(self)
         self.game_engine.deck.recycle([self.card])
 
     def __str__(self):
