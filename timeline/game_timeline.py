@@ -10,8 +10,8 @@ GameTimeline = {
     ],
     "before_action_phase": [
         'on_before_action_phase',
-        *[f'poison_trigger_player_{i}' for i in range(1, 7)],
-        *[f'weakness_trigger_player_{i}' for i in range(1, 7)],
+        'poison_trigger',
+        'weakness_trigger',
     ],
     "action_phase_start": [
         'on_action_phase_start',
@@ -20,10 +20,9 @@ GameTimeline = {
         'on_during_action_phase',
     ],
     "after_action_phase": [
-        *[f'on_after_action_phase_player_{i}' for i in range(1, 7)],
+        'on_after_action_phase',
     ],
     "turn_end_phase": [
         'on_turn_end_phase',
-        *[f'reset_actions_player_{i}' for i in range(1, 7)],
     ],
 }

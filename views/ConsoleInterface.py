@@ -64,26 +64,41 @@ class LocalConsoleInterface(ConsoleInterface):
             else:
                 self.send_message("Invalid input. Enter 'Y' or 'N'.", player_id=player_id)
 
-    def prompt_multiple_action_selection(self, actions, num_selections, player_id=None):
+    def prompt_multiple_action_selection(self, actions, min_selections, max_selections, player_id=None):
         if not actions:
             raise ValueError("No available actions to select.")
+        if min_selections > max_selections:
+            raise ValueError("Minimum selections cannot be greater than maximum selections.")
+        if max_selections > len(actions):
+            raise ValueError("Maximum selections cannot be greater than the number of available actions.")
 
-        self.send_message(f"\nSelect {num_selections} action(s):", player_id=player_id)
+        self.send_message(f"\nSelect between {min_selections} and {max_selections} action(s). Enter 'done' when finished:", player_id=player_id)
         for idx, action in enumerate(actions):
             self.send_message(f"{idx}: {action}", player_id=player_id)
 
         selected_actions = []
-        while len(selected_actions) < num_selections:
+        while len(selected_actions) < max_selections:
             try:
-                choice = int(input(f"Select action {len(selected_actions) + 1}: ", player_id=player_id))
+                choice = input(f"Select action {len(selected_actions) + 1} (or 'done'): ")
+                if choice.lower() == 'done':
+                    if len(selected_actions) < min_selections:
+                        self.send_message(f"You must select at least {min_selections} action(s).", player_id=player_id)
+                    else:
+                        break
+                choice = int(choice)
                 if 0 <= choice < len(actions):
                     selected_action = actions[choice]
-                    selected_actions.append(selected_action)
-                    self.send_message(f"You have selected: {selected_action}", player_id=player_id)
+                    if selected_action in selected_actions:
+                        self.send_message("You've already selected this action. Please choose a different one.", player_id=player_id)
+                    else:
+                        selected_actions.append(selected_action)
+                        self.send_message(f"You have selected: {selected_action}", player_id=player_id)
+                        if len(selected_actions) == max_selections:
+                            break
                 else:
                     self.send_message("Invalid selection. Please select a valid action.", player_id=player_id)
             except ValueError:
-                self.send_message("Invalid input. Please enter a number.", player_id=player_id)
+                self.send_message("Invalid input. Please enter a number or 'done'.", player_id=player_id)
 
         return selected_actions
 

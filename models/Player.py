@@ -5,11 +5,14 @@ from .Action import (
     SynthesisAction,
     PurchaseAction, RefineAction,
     AttackCardAction, MagicCardAction, HolyLightCardAction,
-    CounterCardAction, NoResponseAction, MagicBulletCounterCardAction
+    CounterCardAction, NoResponseAction, MagicBulletCounterCardAction, MagicBulletCardAction
 )
 from .Effect import HolyShieldEffect, PoisonEffect, WeaknessEffect
 from .Heal import Heal
 from utils.decorators import subscribe
+from game_engine.EventManager import Event
+from timeline.game_timeline import GameTimeline
+from timeline.damage_timeline import DamageTimeline
 
 class Player:
     def __init__(self, player_id, team, deck, interface, event_manager, game_engine):
@@ -32,20 +35,23 @@ class Player:
             "special": 0
         }
         
-        self.set_timeline_subscriptions()
+        self.setup_event_handlers()
 
-    def set_timeline_subscriptions(self):
-        for attr_name in dir(self):
-            attr = getattr(self, attr_name)
-            if callable(attr) and hasattr(attr, '_subscribe_event'):
-                event_type = attr._subscribe_event
-                listener_name = attr._subscribe_name(self)
-                self.event_manager.subscribe(event_type, attr, name=listener_name)
-                self.interface.send_message(f"Subscribed {listener_name} to {event_type}", debug=True)
+    def setup_event_handlers(self):
+        for event_type, handlers in GameTimeline.items():
+            for priority, handler_name in enumerate(handlers):
+                handler = getattr(self, handler_name, None)
+                if handler:
+                    self.event_manager.subscribe(event_type, handler, priority=priority)
 
-    @subscribe("before_action_phase", name=lambda self: f"poison_trigger_player_{self.id}")
-    def poison_trigger(self, player):
-        if player.id != self.id:
+        for event_type, handlers in DamageTimeline.items():
+            for priority, handler_name in enumerate(handlers):
+                handler = getattr(self, handler_name, None)
+                if handler:
+                    self.event_manager.subscribe(event_type, handler, priority=priority)
+
+    def poison_trigger(self, event):
+        if event.data['player'].id != self.id:
             return
         self.interface.send_message(f'processing poison trigger for player {self.id}', debug=True)
         poison_effects = [effect for effect in self.effects if isinstance(effect, PoisonEffect)]
@@ -54,9 +60,8 @@ class Player:
         for poison_effect in poison_effects_sorted:
             poison_effect.execute()
 
-    @subscribe("before_action_phase", name=lambda self: f"weakness_trigger_player_{self.id}")
-    def weakness_trigger(self, player):
-        if player.id != self.id:
+    def weakness_trigger(self, event):
+        if event.data['player'].id != self.id:
             return
         self.interface.send_message(f'processing weakness trigger for player {self.id}', debug=True)
         weakness_effects = [effect for effect in self.effects if isinstance(effect, WeaknessEffect)]
@@ -100,16 +105,10 @@ class Player:
             else:
                 available_actions.append(NoResponseAction(player=self, game_engine=self.game_engine))
     
-    @subscribe("after_action_phase", name=lambda self: f"on_after_action_phase_player_{self.id}")
-    def on_after_action_phase(self, player, action):
-        if player.id != self.id:
-            return
-        self.interface.send_message(f"Player {self.id} performed action: {action}", debug=True)
+    def after_action(self, event):
+        self.interface.send_message(f"Player {self.id} performed action: {event.data['action']}", debug=True)
 
-    @subscribe("turn_end_phase", name=lambda self: f"reset_actions_player_{self.id}")
-    def reset_actions(self, player):
-        if player.id != self.id:
-            return
+    def reset_actions(self):
         self.interface.send_message(f'resetting actions for player {self.id}', debug=True)
         self.action_points = {
             "general": 1,
@@ -121,7 +120,7 @@ class Player:
 
 
     def draw_initial_hand(self):
-        self.hand = self.deck.deal(3)
+        self.hand = self.deck.deal(6)
         self.interface.send_message(f"Player {self.id} drew initial hand: {[card.name for card in self.hand]}", debug=True)
 
     # def apply_effect(self, effect):
@@ -155,6 +154,8 @@ class Player:
         for card in self.hand:
             if card.is_attack():
                 action = AttackCardAction(player=self, game_engine=self.game_engine, card=card)
+            elif card.is_magic_bullet():
+                action = MagicBulletCardAction(player=self, game_engine=self.game_engine, card=card)
             elif card.is_magic():
                 action = MagicCardAction(player=self, game_engine=self.game_engine, card=card)
             else:
@@ -183,10 +184,11 @@ class Player:
             excess_cards = len(self.hand) - self.max_hand_size
             self.interface.send_message(f"Player {self.id} has exceeded the hand limit by {excess_cards} card(s). Must discard down to {self.max_hand_size} cards.", player_id=self.id)
 
-            discard_choice = self.interface.prompt_multiple_action_selection(self.hand, excess_cards, player_id=self.id)
+            discard_choice = self.interface.prompt_multiple_action_selection(self.hand, min_selections=excess_cards, 
+                                                                             max_selections=excess_cards, player_id=self.id)
             for card in discard_choice:
                 self.hand.remove(card)
-                self.deck.recycle(card)
+                self.deck.recycle([card])
                 self.team.add_morale(-1)
 
             self.interface.send_message(f"Player {self.id}'s hand size is now {len(self.hand)}.", debug=True)

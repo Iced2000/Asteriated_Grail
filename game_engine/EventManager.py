@@ -1,68 +1,57 @@
 # game_engine/EventManager.py
+from collections import defaultdict
 from timeline.damage_timeline import DamageTimeline
 from timeline.game_timeline import GameTimeline
+
+class Event:
+    def __init__(self, event_type, **data):
+        self.type = event_type
+        self.data = data
+
+class EventHandler:
+    def __init__(self, callback, priority=0):
+        self.callback = callback
+        self.priority = priority
+
+    def handle(self, event):
+        return self.callback(event)
 
 class EventManager:
     def __init__(self, console_interface):
         self.interface = console_interface
-        self.listeners = {}
+        self.handlers = defaultdict(list)
+        self.initialize_timelines()
+
+    def initialize_timelines(self):
         for event_type in GameTimeline.keys():
-            self.listeners[event_type] = []
+            self.handlers[event_type] = []
         for event_type in DamageTimeline.keys():
-            self.listeners[event_type] = []
-    
-    def subscribe(self, event_type, listener, name=None):
-        """
-        Subscribes a listener (function) to a specific event type.
-        
-        :param event_type: The type of event to listen for.
-        :param listener: The function to call when the event is emitted.
-        :param name: Optional name for the listener. If not provided, the function's __name__ is used.
-        """
-        if event_type not in self.listeners:
+            self.handlers[event_type] = []
+
+    def subscribe(self, event_type, listener, priority=0, name=None):
+        if event_type not in self.handlers:
             raise ValueError(f"Event type '{event_type}' is not in the game or damage timeline.")
         listener_name = name if name else listener.__name__
-        self.listeners[event_type].append((listener_name, listener))
-        self.interface.send_message(f"Listener '{listener_name}' subscribed to {event_type}.", debug=True)
-    
+        handler = EventHandler(listener, priority)
+        self.handlers[event_type].append((listener_name, handler))
+        self.sort_handlers(event_type)
+        self.interface.send_message(f"Listener '{listener_name}' subscribed to {event_type} with priority {priority}.", debug=True)
+
+    def sort_handlers(self, event_type):
+        self.handlers[event_type].sort(key=lambda x: x[1].priority, reverse=True)
+
     def emit(self, event_type, **kwargs):
-        """
-        Emits an event, calling all subscribed listeners with provided keyword arguments.
-        If any listener returns False, continue processing but return False at the end.
-        
-        :param event_type: The type of event to emit.
-        :param kwargs: Additional data to pass to listeners.
-        :return: True if all listeners processed successfully, False if any listener returned False.
-        """
-        listeners = self.listeners.get(event_type, [])
-        self.interface.send_message(f"Emitting event '{event_type}' to {len(listeners)} listener(s).", debug=True)
+        event = Event(event_type, **kwargs)
+        handlers = self.handlers.get(event_type, [])
+        self.interface.send_message(f"Emitting event '{event_type}' to {len(handlers)} handler(s).", debug=True)
         all_successful = True
-        for listener_name, listener in listeners:
-            result = listener(**kwargs)
+        for listener_name, handler in handlers:
+            result = handler.handle(event)
             if result is False:
-                self.interface.send_message(f"Listener {listener_name} returned False for event '{event_type}'.", debug=True)
+                self.interface.send_message(f"Handler {listener_name} returned False for event '{event_type}'.", debug=True)
                 all_successful = False
+                break
         return all_successful
-    
-    def sort_listeners(self):
-        """
-        Sorts all listeners for each event type based on the order defined in the timelines.
-        Listeners not in the order list are placed at the back.
-        """
-        for event_type in self.listeners.keys():
-            if event_type not in GameTimeline and event_type not in DamageTimeline:
-                raise ValueError(f"Event type '{event_type}' is not in the game or damage timeline.")
-            
-            if event_type in GameTimeline:
-                order = GameTimeline[event_type]
-            elif event_type in DamageTimeline:
-                order = DamageTimeline[event_type]
-            
-            listener_dict = {name: listener for name, listener in self.listeners[event_type]}
-            sorted_listeners = [(name, listener_dict[name]) for name in order if name in listener_dict]
-            remaining_listeners = [(name, listener) for name, listener in listener_dict.items() if name not in order]
-            self.listeners[event_type] = sorted_listeners + remaining_listeners
-            self.interface.send_message(f"Listeners for {event_type} sorted in the given order.", debug=True)
 
 """
 # Define some example listeners
