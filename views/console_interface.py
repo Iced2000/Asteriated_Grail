@@ -1,4 +1,4 @@
-# views/ConsoleInterface.py
+# views/console_interface.py
 from abc import ABC, abstractmethod
 
 class ConsoleInterface(ABC):

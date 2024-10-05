@@ -1,4 +1,5 @@
-# game_engine/EventManager.py
+# game_engine/event_manager.py
+
 from collections import defaultdict
 from timeline import GameTimeline, DamageTimeline
 
@@ -51,24 +52,3 @@ class EventManager:
                 all_successful = False
                 break
         return all_successful
-
-"""
-# Define some example listeners
-def listener1(**kwargs):
-    self.interface.send_message("Listener 1 executed")
-
-def listener2(**kwargs):
-    self.interface.send_message("Listener 2 executed")
-
-def listener3(**kwargs):
-    self.interface.send_message("Listener 3 executed")
-
-# Subscribe listeners
-event_manager = EventManager()
-event_manager.subscribe("attack", listener1, "listener1")
-event_manager.subscribe("attack", listener2, "listener2")
-event_manager.subscribe("attack", listener3, "listener3")
-
-# Sort all listeners
-event_manager.sort_listeners()
-"""

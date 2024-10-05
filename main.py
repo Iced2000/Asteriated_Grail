@@ -1,9 +1,9 @@
 # main.py
 
 import argparse
-from game_engine.AgrGameEngine import AgrGameEngine
-from server.game_server import GameServer
-from client.game_client import GameClient
+from game_engine import GameEngine
+from server import GameServer
+from client import GameClient
 
 def main():
     parser = argparse.ArgumentParser(description="AGR Game")
@@ -21,11 +21,11 @@ def main():
                 {'pid': 3, 'character_type': 'BasePlayer', 'team': 'red'},
                 {'pid': 4, 'character_type': 'BasePlayer', 'team': 'blue'},
             ],
-            'deck_path': "cardDB.txt",
+            'deck_path': "assets/cardDB.txt",
             'networked': False,
             'debug': True
         }
-        game_engine = AgrGameEngine(config)
+        game_engine = GameEngine(config)
         game_engine.start_game()
     elif args.mode == "server":
         server = GameServer(args.host, args.port, args.num_players)

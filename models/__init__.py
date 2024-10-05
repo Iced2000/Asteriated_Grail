@@ -1,19 +1,19 @@
 # models/__init__.py
 
-from .Card import Card
-from .Deck import Deck
-from .Jewel import AgrJewel
-from .Player import Player
-from .Team import Team
-from .Action import AttackAction, MagicAction, SpecialAction
+from .jewel import Jewel
+from .team import Team
+from .player_hand import PlayerHand
+from .player_effects import PlayerEffects
+from .player_heal import PlayerHeal
+from .card import Card
+from .deck import Deck
 
 __all__ = [
     'Card',
     'Deck',
-    'AgrJewel',
-    'Player',
+    'PlayerHeal',
+    'Jewel',
+    'PlayerEffects',
+    'PlayerHand',
     'Team',
-    'AttackAction',
-    'MagicAction',
-    'SpecialAction'
 ]

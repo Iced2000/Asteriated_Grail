@@ -1,6 +1,6 @@
-# models/Team.py
+# models/team.py
 
-from .Jewel import AgrJewel
+from models import Jewel
 
 class Team:
     def __init__(self, is_red, game_engine):
@@ -8,7 +8,7 @@ class Team:
         self._game_engine = game_engine
         self._interface = game_engine.get_interface()
         self._event_manager = game_engine.get_event_manager()
-        self._jewels = AgrJewel(maxJewel=5)
+        self._jewels = Jewel(maxJewel=5)
         self._morale = 15
         self._grail = 0
         self._players = []

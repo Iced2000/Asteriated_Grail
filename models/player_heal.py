@@ -1,4 +1,6 @@
-class Heal:
+# models/player_heal.py
+
+class PlayerHeal:
     def __init__(self, max_amount=2):
         self._max_amount = max_amount
         self._amount = 0

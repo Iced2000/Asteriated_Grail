@@ -1,4 +1,4 @@
-from timeline.game_timeline import GameTimeline
-from timeline.damage_timeline import DamageTimeline
+from .game_timeline import GameTimeline
+from .damage_timeline import DamageTimeline
 
 __all__ = ['GameTimeline', 'DamageTimeline']

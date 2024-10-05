@@ -1,4 +1,4 @@
-# models/Card.py
+# models/card.py
 
 class Card:
     def __init__(self, card_id, card_type, element, property_, name, unique_skill1=None, unique_skill2=None):

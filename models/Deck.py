@@ -1,7 +1,7 @@
-# models/Deck.py
+# models/deck.py
 
 import random
-from .Card import Card
+from models import Card
 
 class Deck:
     def __init__(self, card_file_path, interface):
@@ -29,7 +29,7 @@ class Deck:
                         cards.append(card)
             self.interface.send_message(f"Loaded {len(cards)} cards into the deck.", debug=True)
         except FileNotFoundError:
-            self.interface.send_message(f"Card file {path} not found.", debug=True)
+            raise FileNotFoundError(f"Card file {path} not found.")
         return cards
 
     def shuffle(self):

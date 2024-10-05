@@ -1,4 +1,4 @@
-# models/PlayerEffects.py
+# models/player_effects.py
 
 class PlayerEffects:
     def __init__(self):

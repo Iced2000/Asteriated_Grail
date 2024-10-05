@@ -1,4 +1,4 @@
-# models/PlayerHand.py
+# models/player_hand.py
 
 class PlayerHand:
     def __init__(self, max_size=6):

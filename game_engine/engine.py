@@ -1,18 +1,17 @@
-# game_engine/AgrGameEngine.py
+# game_engine/engine.py
 
-from models.Player import Player
-from models.Team import Team
-from models.Deck import Deck
-from models.Effect import HolyShieldEffect
-from views.ConsoleInterface import LocalConsoleInterface, NetworkedConsoleInterface
-from models.Action import (HolyLightCardAction, NoResponseAction, 
-                           CounterCardAction, MagicBulletCounterCardAction)
-from game_engine.EventManager import EventManager
+from .event_manager import EventManager
+from views import LocalConsoleInterface, NetworkedConsoleInterface
+from models import Team, Deck
+from models.effect import HolyShieldEffect
+from models.action import (
+    NoResponseAction, 
+    CounterCardAction, HolyLightCardAction, MagicBulletCounterCardAction
+)
 from timeline import GameTimeline, DamageTimeline
-from factories.character_factory import CharacterFactory
+from factories import CharacterFactory
 
-
-class AgrGameEngine:
+class GameEngine:
     def __init__(self, config):
         self._networked = config.get('networked', False)
         if self._networked:

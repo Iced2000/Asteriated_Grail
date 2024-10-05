@@ -1,5 +1,5 @@
 # views/__init__.py
 
-from .ConsoleInterface import ConsoleInterface
+from .console_interface import ConsoleInterface, LocalConsoleInterface, NetworkedConsoleInterface
 
-__all__ = ['ConsoleInterface']
+__all__ = ['ConsoleInterface', 'LocalConsoleInterface', 'NetworkedConsoleInterface']

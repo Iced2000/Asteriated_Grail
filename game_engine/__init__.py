@@ -1,6 +1,6 @@
 # game_engine/__init__.py
 
-from .AgrGameEngine import AgrGameEngine
-from .EventManager import EventManager
+from .engine import GameEngine
+from .event_manager import EventManager
 
-__all__ = ['AgrGameEngine', 'EventManager']
+__all__ = ['GameEngine', 'EventManager']

@@ -1,27 +1,9 @@
-# models/Effect.py
+# models/effect/basic_effect.py
 
 from abc import ABC, abstractmethod
+from .base_effect import BaseEffect
 
-class Effect:
-    def __init__(self, source, target, game_engine):
-        self._source = source
-        self._target = target
-        self._game_engine = game_engine
-        self._interface = game_engine.get_interface()
-
-    @abstractmethod
-    def apply(self):
-        pass
-
-    @abstractmethod
-    def execute(self):
-        pass
-
-    @abstractmethod
-    def __str__(self):
-        return "Effect"
-
-class BasicEffect(Effect):
+class BasicEffect(BaseEffect):
     def __init__(self, source, target, game_engine, card):
         super().__init__(source, target, game_engine)
         self._card = card
@@ -116,17 +98,3 @@ class HolyShieldEffect(BasicEffect):
         self._target.set_targetable_state(effect_type="holy_shield", value=True)
     def __str__(self):
         return "Holy Shield"
-
-
-class SpecialEffect(Effect):
-    @abstractmethod
-    def apply(self):
-        pass
-    
-    @abstractmethod
-    def execute(self):
-        pass
-    
-    @abstractmethod
-    def __str__(self):
-        return "SpecialEffect"

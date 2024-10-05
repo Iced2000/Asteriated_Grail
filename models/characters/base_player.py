@@ -1,19 +1,17 @@
-# models/Player.py
+# models/characters/base_player.py
 
-from .Jewel import AgrJewel
-from .Action import (
-    SynthesisAction,
-    PurchaseAction, RefineAction,
-    AttackCardAction, MagicCardAction, HolyLightCardAction,
-    CounterCardAction, NoResponseAction, MagicBulletCounterCardAction, MagicBulletCardAction
-)
-from .Effect import PoisonEffect, WeaknessEffect
-from .Heal import Heal
 from timeline import GameTimeline, DamageTimeline
-from .PlayerHand import PlayerHand
-from .PlayerEffects import PlayerEffects
+from models import Jewel, PlayerHeal, PlayerHand, PlayerEffects
+from models.effect import PoisonEffect, WeaknessEffect
+from models.action import (
+    NoResponseAction, 
+    AttackCardAction, 
+    CounterCardAction, HolyLightCardAction, MagicBulletCounterCardAction, 
+    MagicBulletCardAction, MagicCardAction,
+    PurchaseAction, RefineAction, SynthesisAction
+)
 
-class Player:
+class BasePlayer:
     def __init__(self, character_config):
         self._id = character_config['player_id']
         self._team = character_config['team']
@@ -22,10 +20,10 @@ class Player:
         self._interface = self._game_engine.get_interface()
         self._event_manager = self._game_engine.get_event_manager()
         
-        self._heal = Heal()
+        self._heal = PlayerHeal()
         self._hand = PlayerHand()
         self._effects = PlayerEffects()
-        self._jewels = AgrJewel(maxJewel=3)  # Player's jewel capacity is 3
+        self._jewels = Jewel(maxJewel=3)  # Player's jewel capacity is 3
         self._state = {
             'can_be_attacked': True,
         } # allowed actions

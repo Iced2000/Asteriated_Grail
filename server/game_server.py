@@ -3,7 +3,7 @@
 import socket
 import json
 import threading
-from game_engine.AgrGameEngine import AgrGameEngine
+from game_engine.engine import GameEngine
 
 class GameServer:
     def __init__(self, host, port, num_players):

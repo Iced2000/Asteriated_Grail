@@ -1,6 +1,6 @@
-# models/Jewel.py
+# models/jewel.py
 
-class AgrJewel:
+class Jewel:
     def __init__(self, maxJewel=5):
         self._gem = 0
         self._crystal = 0
