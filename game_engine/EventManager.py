@@ -37,7 +37,7 @@ class EventManager:
         self.interface.send_message(f"Listener '{listener_name}' subscribed to {event_type} with priority {priority}.", debug=True)
 
     def sort_handlers(self, event_type):
-        self.handlers[event_type].sort(key=lambda x: x[1].priority, reverse=True)
+        self.handlers[event_type].sort(key=lambda x: x[1].priority)
 
     def emit(self, event_type, **kwargs):
         event = Event(event_type, **kwargs)

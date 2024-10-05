@@ -5,9 +5,9 @@ from models.Effect import PoisonEffect, WeaknessEffect, HolyShieldEffect
 
 class Action(ABC):
     def __init__(self, player, game_engine):
-        self.player = player
-        self.game_engine = game_engine
-        self.interface = game_engine.interface
+        self._player = player
+        self._game_engine = game_engine
+        self._interface = game_engine.get_interface()
 
     @property
     @abstractmethod
@@ -77,49 +77,43 @@ class AttackAction(Action):
         pass
 
     def on_action_success(self):
-        if self.player.action_points["attack"] > 0:
-            self.player.action_points["attack"] -= 1
-        else:
-            self.player.action_points["general"] -= 1
+        self._player.remove_action_point("attack")
 
 class AttackCardAction(AttackAction):
     def __init__(self, player, game_engine, card):
         super().__init__(player, game_engine)
-        self.card = card
+        self._card = card
 
     @property
     def name(self):
-        return f"Attack with {self.card.card_id} {self.card.name}"
+        return f"Attack with {self._card}"
 
     def available(self):
         return (
-            self.card.is_attack() and
-            (self.player.action_points.get("attack", 0) >= 1 or
-             self.player.action_points.get("general", 0) >= 1)
+            self._card.is_attack() and
+            self._player.can_perform_action("attack")
         )
 
     def execute(self):
-        self.interface.send_message(f"\nPlayer {self.player.id} is attempting an Attack Action with {self.card.name}.", debug=True)
+        self._interface.send_message(f"\nPlayer {self._player.get_id()} is attempting an Attack Action with {self._card.get_name()}.", debug=True)
         
-        candidates = self.game_engine.get_attack_target(self.player)
-        target = self.interface.prompt_action_selection(candidates, player_id=self.player.id)
+        candidates = self._game_engine.get_attack_target(self._player)
+        target = self._interface.prompt_action_selection(candidates, player_id=self._player.get_id())
         if not target:
             raise Exception("No valid target selected. Action canceled.")
         
-        self.player.hand.remove_card(self.card)
+        self._player.remove_cards(self._card)
         
         attack_event = {
             'attack_type': "attack",
-            'attacker': self.player, 
+            'attacker': self._player, 
             'defender': target, 
-            'card': self.card,
+            'card': self._card,
             'damage_amount': 2,
-            'can_not_counter': self.card.is_dark_extinction(),
+            'can_not_counter': self._card.is_dark_extinction(),
         }
-        self.game_engine.process_damage_timeline(attack_event, start_step=1)
-
-        self.game_engine.deck.recycle([self.card])
-        self.interface.send_message(f"Player {self.player.id} plays {self.card.name} to attack Player {target.id}.", broadcast=True)
+        self._game_engine.process_damage_timeline(attack_event, start_step=1)
+        self._interface.send_message(f"Player {self._player.get_id()} plays {self._card.get_name()} to attack Player {target.get_id()}.", broadcast=True)
 
         return True
 
@@ -139,86 +133,80 @@ class MagicAction(Action):
         pass
 
     def on_action_success(self):
-        if self.player.action_points["magic"] > 0:
-            self.player.action_points["magic"] -= 1
-        else:
-            self.player.action_points["general"] -= 1
+        self._player.remove_action_point("magic")
 
 class MagicCardAction(MagicAction):
     def __init__(self, player, game_engine, card):
         super().__init__(player, game_engine)
-        self.card = card
+        self._card = card
 
     @property
     def name(self):
-        return f"Cast {self.card.card_id} {self.card.name}"
+        return f"Cast {self._card}"
 
     def available(self):
         return (
-            (self.card.is_poison() or
-             self.card.is_weakness() or
-             self.card.is_holy_shield()) and
-            (self.player.action_points.get("magic", 0) >= 1 or
-             self.player.action_points.get("general", 0) >= 1)
+            (self._card.is_poison() or
+             self._card.is_weakness() or
+             self._card.is_holy_shield()) and
+            self._player.can_perform_action("magic")
         )
 
     def execute(self):
-        self.interface.send_message(f"\nPlayer {self.player.id} is attempting a Magic Action with {self.card.name}.", debug=True)
+        self._interface.send_message(f"\nPlayer {self._player.get_id()} is attempting a Magic Action with {self._card.get_name()}.", debug=True)
         
-        target = self.interface.prompt_action_selection(self.game_engine.players, player_id=self.player.id)
+        candidates = self._game_engine.get_magic_target(self._player, card=self._card)
+        target = self._interface.prompt_action_selection(candidates, player_id=self._player.get_id())
         if not target:
             raise Exception("No valid target selected. Action canceled.")
         
-        self.player.hand.remove_card(self.card)
+        self._player.remove_cards(self._card, recycle=False)
         
-        if self.card.is_poison():
-            effect = PoisonEffect(source=self.player, target=target, game_engine=self.game_engine, card=self.card)
-        elif self.card.is_weakness():
-            effect = WeaknessEffect(source=self.player, target=target, game_engine=self.game_engine, card=self.card)
-        elif self.card.is_holy_shield():
-            effect = HolyShieldEffect(source=self.player, target=target, game_engine=self.game_engine, card=self.card)
+        if self._card.is_poison():
+            effect = PoisonEffect(source=self._player, target=target, game_engine=self._game_engine, card=self._card)
+        elif self._card.is_weakness():
+            effect = WeaknessEffect(source=self._player, target=target, game_engine=self._game_engine, card=self._card)
+        elif self._card.is_holy_shield():
+            effect = HolyShieldEffect(source=self._player, target=target, game_engine=self._game_engine, card=self._card)
         else:
             raise Exception("Invalid magic card.")
         
         effect.apply()
-        self.interface.send_message(f"Player {target.id} is affected by {self.card.name} by Player {self.player.id}.", broadcast=True)
+        self._interface.send_message(f"Player {target.get_id()} is affected by {self._card.get_name()} by Player {self._player.get_id()}.", broadcast=True)
         
         return True
 
 class MagicBulletCardAction(MagicAction):
     def __init__(self, player, game_engine, card):
         super().__init__(player, game_engine)
-        self.card = card
+        self._card = card
 
     @property
     def name(self):
-        return f"Cast {self.card.card_id} {self.card.name}"
+        return f"Cast {self._card}"
     
     def available(self):
         return (
-            self.card.is_magic_bullet() and
-            (self.player.action_points.get("magic", 0) >= 1 or
-             self.player.action_points.get("general", 0) >= 1)
+            self._card.is_magic_bullet() and
+            self._player.can_perform_action("magic")
         )
     
     def execute(self):
-        self.interface.send_message(f"\nPlayer {self.player.id} is attempting a Magic Bullet Action with {self.card.name}.", debug=True)
+        self._interface.send_message(f"\nPlayer {self._player.get_id()} is attempting a Magic Bullet Action with {self._card.get_name()}.", debug=True)
         
-        target = self.game_engine.get_magic_bullet_target(self.player)
+        target = self._game_engine.get_magic_bullet_target(self._player)
         
-        self.player.hand.remove_card(self.card)
+        self._player.remove_cards(self._card)
 
         attack_event = {
             'attack_type': "magic_bullet",
-            'attacker': self.player, 
+            'attacker': self._player, 
             'defender': target, 
-            'card': self.card,
+            'card': self._card,
             'damage_amount': 2,
         }
-        self.game_engine.process_damage_timeline(attack_event, start_step=1)
-
-        self.game_engine.deck.recycle([self.card])
-        self.interface.send_message(f"Player {self.player.id} plays {self.card.name} to cast Magic Bullet on Player {target.id}.", broadcast=True)
+        self._game_engine.process_damage_timeline(attack_event, start_step=1)
+        self._interface.send_message(f"Player {self._player.get_id()} plays {self._card.get_name()} to cast Magic Bullet on Player {target.get_id()}.", broadcast=True)
         
         return True
 
@@ -233,10 +221,7 @@ class SpecialAction(Action):
         pass
 
     def on_action_success(self):
-        if self.player.action_points["special"] > 0:
-            self.player.action_points["special"] -= 1
-        else:
-            self.player.action_points["general"] -= 1
+        self._player.remove_action_point("special")
 
 class SynthesisAction(SpecialAction):
     @property
@@ -244,40 +229,30 @@ class SynthesisAction(SpecialAction):
         return "Synthesize"
 
     def available(self):
-        return (self.player.hand.can_draw_cards(3) and
-               self.player.team.jewels.total_jewels() >= 3 and
-                (self.player.action_points["general"] >= 1 or 
-                 self.player.action_points["special"] >= 1))
+        return (self._player.can_draw_cards(3) and
+               self._player.get_team().can_synthesis() and
+               self._player.can_perform_action("special"))
 
     def execute(self):
-        self.interface.send_message(f"\nPlayer {self.player.id} is attempting a Synthesis Action.", debug=True)
+        self._interface.send_message(f"\nPlayer {self._player.get_id()} is attempting a Synthesis Action.", debug=True)
 
-        if self.player.team.jewels.total_jewels() < 3:
+        if not self._player.get_team().can_synthesis():
             raise Exception("Not enough jewels to perform 'Synthesize'. Action canceled.")
-        if not self.player.hand.can_draw_cards(3):
-            raise Exception(f"Cannot perform 'Synthesize' as drawing 3 cards would exceed hand size of {self.player.max_hand_size}. Action canceled.")
+        if not self._player.can_draw_cards(3):
+            raise Exception(f"Cannot perform 'Synthesize' as drawing 3 cards would exceed hand size. Action canceled.")
 
-        valid_combinations = self.player.team.jewels.get_jewel_combination(min_num=3, max_num=3, gem_min=0, crystal_min=0)
+        valid_combinations = self._player.get_team().get_synthesis_jewel_combination()
         if not valid_combinations:
             raise Exception("No valid jewel combination to perform 'Synthesize'. Action canceled.")
         
-        gems_to_use, crystals_to_use = self.interface.prompt_action_selection(valid_combinations, player_id=self.player.id)
+        gems_to_use, crystals_to_use = self._interface.prompt_action_selection(valid_combinations, player_id=self._player.get_id())
 
-        removed = self.player.team.jewels.remove_jewel(gem_remove=gems_to_use, crystal_remove=crystals_to_use)
-        if not removed:
-            raise Exception("Failed to remove jewels. Action canceled.")
+        self._player.get_team().remove_jewel(gem_remove=gems_to_use, crystal_remove=crystals_to_use)
+        
+        self._player.take_damage(3, damage_type="draw")
+        self._player.get_team().add_grail(1)
+        self._player.get_team().get_opposite_team().add_morale(-1)
 
-        drawn_cards = self.player.deck.deal(3)
-        if not drawn_cards:
-            raise Exception("No cards drawn. Synthesis action ends.")
-        self.player.hand.add_cards(drawn_cards)
-
-        self.player.team.add_grail(1)
-        self.interface.send_message(f"{self.player.team} synthesized 1 Grail. Current Grail: {self.player.team.grail}", broadcast=True)
-
-        opposing_team = self.game_engine.get_opposite_team(self.player.team)
-        opposing_team.add_morale(-1)
-        self.interface.send_message(f"{opposing_team} loses 1 morale due to Synthesis. Current Morale: {opposing_team.morale}", broadcast=True)
         return True
 
 class PurchaseAction(SpecialAction):
@@ -286,44 +261,39 @@ class PurchaseAction(SpecialAction):
         return "Purchase"
 
     def available(self):
-        return (self.player.hand.can_draw_cards(3) and
-                (self.player.action_points["general"] >= 1 or 
-                 self.player.action_points["special"] >= 1))
+        return (self._player.can_draw_cards(3) and
+               self._player.can_perform_action("special"))
         
     def execute(self):
-        self.interface.send_message(f"\nPlayer {self.player.id} is attempting a Purchase Action.", debug=True)
+        self._interface.send_message(f"\nPlayer {self._player.get_id()} is attempting a Purchase Action.", debug=True)
 
-        if not self.player.hand.can_draw_cards(3):
-            raise Exception(f"Cannot perform 'Purchase' as drawing 3 cards would exceed hand size of {self.player.hand.max_size}. Action canceled.")
+        if not self._player.can_draw_cards(3):
+            raise Exception(f"Cannot perform 'Purchase' as drawing 3 cards would exceed hand size. Action canceled.")
 
-        drawn_cards = self.player.deck.deal(3)
-        if not drawn_cards:
-            raise Exception("No cards drawn. Purchase action ends.")
-
-        self.interface.send_message(f"Player {self.player.id} drew: {[card.name for card in drawn_cards]}", player_id=self.player.id)
+        self._player.take_damage(3, damage_type="draw")
         
-        self.player.hand.add_cards(drawn_cards)
-        
-        current_jewels = self.player.team.jewels.total_jewels()
-        if current_jewels >= self.player.team.jewels.max_jewel:
-            self.interface.send_message(f"{self.player.team}'s jewels are already at maximum. Purchase completed without adding jewels.", broadcast=True)
-        elif current_jewels == self.player.team.jewels.max_jewel - 1:
-            self.interface.send_message(f"You can add one more jewel to reach the maximum of {self.player.team.jewels.max_jewel}.", player_id=self.player.id)
-            choice = self.interface.prompt_action_selection(['gem', 'crystal'], player_id=self.player.id)
+        if self._player.get_team().can_add_jewel(gem_add=1, crystal_add=1):
+            self._player.get_team().add_jewel(gem_add=1, crystal_add=1)
+            self._interface.send_message(f"{self._player.get_team()} gains 1 Gem and 1 Crystal from Purchase.", debug=True)
+        elif self._player.get_team().can_add_jewel(gem_add=1) or self._player.get_team().can_add_jewel(crystal_add=1):
+            self._interface.send_message(f"You can add one more jewel to team.", player_id=self._player.get_id())
+            choices = []
+            if self._player.get_team().can_add_jewel(gem_add=1):
+                choices.append('gem')
+            if self._player.get_team().can_add_jewel(crystal_add=1):
+                choices.append('crystal')
+            choice = self._interface.prompt_action_selection(choices, player_id=self._player.get_id())
             if choice == 'gem':
-                self.player.team.jewels.add_jewel(gem_add=1)
-                self.interface.send_message(f"{self.player.team} gains 1 Gem from Purchase.", broadcast=True)
+                self._player.get_team().add_jewel(gem_add=1)
+                self._interface.send_message(f"{self._player.get_team()} gains 1 Gem from Purchase.", debug=True)
             elif choice == 'crystal':
-                self.player.team.jewels.add_jewel(crystal_add=1)
-                self.interface.send_message(f"{self.player.team} gains 1 Crystal from Purchase.", broadcast=True)
+                self._player.get_team().add_jewel(crystal_add=1)
+                self._interface.send_message(f"{self._player.get_team()} gains 1 Crystal from Purchase.", debug=True)
             else:
                 raise Exception("Invalid choice for adding jewel in Purchase action.")
         else:
-            if self.player.team.jewels.can_add(gem_add=1, crystal_add=1):
-                self.player.team.jewels.add_jewel(gem_add=1, crystal_add=1)
-                self.interface.send_message(f"{self.player.team} gains 1 Gem and 1 Crystal from Purchase.", broadcast=True)
-            else:
-                raise Exception("Unexpected error in adding jewels. Purchase completed without adding jewels.")
+            self._interface.send_message(f"{self._player.get_team()}'s jewels are already at maximum. Purchase completed without adding jewels.", debug=True)
+
         return True
 
 class RefineAction(SpecialAction):
@@ -333,43 +303,37 @@ class RefineAction(SpecialAction):
 
     def available(self):
         return (
-            (self.player.action_points.get("general", 0) >= 1 or 
-             self.player.action_points.get("special", 0) >= 1) and
-            (self.player.team.jewels.total_jewels() >= 1) and
-            (self.player.jewels.total_jewels() < self.player.jewels.max_jewel)
+            self._player.can_perform_action("special") and
+            self._player.get_team().can_refine() and
+            (self._player.can_add_jewel(gem_add=1) or 
+             self._player.can_add_jewel(crystal_add=1))
         )
 
     def execute(self):
-        self.interface.send_message(f"\nPlayer {self.player.id} is attempting a Refine Action.", debug=True)
+        self._interface.send_message(f"\nPlayer {self._player.get_id()} is attempting a Refine Action.", debug=True)
 
-        available_jewels = self.player.team.jewels.total_jewels()
-        player_available_space = self.player.jewels.max_jewel - self.player.jewels.total_jewels()
-        if available_jewels == 0 or player_available_space == 0:
-            raise Exception("No jewels available to refine or player's jewel capacity is full. Action canceled.")
+        candidates = self._player.get_team().get_refine_jewel_combination()
+        valid_combinations = []
+        for combination in candidates:
+            if self._player.can_add_jewel(gem_add=combination[0], crystal_add=combination[1]):
+                valid_combinations.append(combination)
 
-        max_transfer = min(2, available_jewels, player_available_space)
-        valid_combinations = self.player.team.jewels.get_jewel_combination(min_num=1, max_num=max_transfer, gem_min=0, crystal_min=0)
         if not valid_combinations:
             raise Exception("No valid jewel combination to perform 'Refine'. Action canceled.")
         
-        gems_to_transfer, crystals_to_transfer = self.interface.prompt_action_selection(valid_combinations, player_id=self.player.id)
+        gems_to_transfer, crystals_to_transfer = self._interface.prompt_action_selection(valid_combinations, player_id=self._player.get_id())
 
-        removed = self.player.team.jewels.remove_jewel(gem_remove=gems_to_transfer, crystal_remove=crystals_to_transfer)
-        if not removed:
-            raise Exception("Failed to remove jewels. Action canceled.")
-
-        if not self.player.jewels.can_add(gem_add=gems_to_transfer, crystal_add=crystals_to_transfer):
-            raise Exception(f"Cannot transfer jewels as it would exceed your jewel capacity of {self.player.jewels.max_jewel}. Action canceled.")
-
-        self.player.jewels.add_jewel(gem_add=gems_to_transfer, crystal_add=crystals_to_transfer)
-        self.interface.send_message(f"Player {self.player.id} refined {gems_to_transfer} gem(s) and {crystals_to_transfer} crystal(s). Current Jewels: {self.player.jewels}", broadcast=True)
+        self._player.get_team().remove_jewel(gem_remove=gems_to_transfer, crystal_remove=crystals_to_transfer)
+        self._player.add_jewel(gem_add=gems_to_transfer, crystal_add=crystals_to_transfer)
+        self._interface.send_message(f"Player {self._player.get_id()} refined {gems_to_transfer} gem(s) and {crystals_to_transfer} crystal(s). Current Jewels: {self._player.get_jewels()}", broadcast=True)
+        
         return True
 
 
 class CounterAction(Action):
     def __init__(self, player, game_engine, attack_event):
         super().__init__(player, game_engine)
-        self.attack_event = attack_event
+        self._attack_event = attack_event
 
     @property
     def name(self):
@@ -389,52 +353,49 @@ class CounterAction(Action):
 class CounterCardAction(CounterAction):
     def __init__(self, player, game_engine, attack_event, card):
         super().__init__(player, game_engine, attack_event)
-        self.card = card
+        self._card = card
 
     @property
     def name(self):
-        return f"Counter with {self.card.card_id} {self.card.name}"
+        return f"Counter with {self._card}"
 
     def available(self):
         return (
-            self.card.is_attack() and
-            (self.attack_event['card'].element == self.card.element or 
-            self.attack_event['card'].is_dark_extinction()) and
-            len(self.game_engine.get_attack_target(self.player, counter=True, attacker=self.attack_event['attacker'])) > 0
+            self._card.is_attack() and
+            (self._attack_event['attack_type'] == "attack" or
+             self._attack_event['attack_type'] == "counter") and
+            (self._attack_event['card'].get_element() == self._card.get_element() or 
+            self._card.is_dark_extinction()) and
+            self._game_engine.get_attack_target(self._player, counter=True, attacker=self._attack_event['attacker'])
         )
 
     def execute(self):
-        self.interface.send_message(f"\nPlayer {self.player.id} is attempting a Counter Action with {self.card.name}.", debug=True)
+        self._interface.send_message(f"\nPlayer {self._player.get_id()} is attempting a Counter Action with {self._card.get_name()}.", debug=True)
         
-        candidates = self.game_engine.get_attack_target(self.player, counter=True, attacker=self.attack_event['attacker'])
-        if not candidates:
-            raise Exception("No available opponents to counter. Action canceled.")
-        
-        target = self.interface.prompt_action_selection(candidates, player_id=self.player.id)
+        candidates = self._game_engine.get_attack_target(self._player, counter=True, attacker=self._attack_event['attacker'])
+        target = self._interface.prompt_action_selection(candidates, player_id=self._player.get_id())
         if not target:
             raise Exception("No valid target selected. Action canceled.")
         
-        self.player.hand.remove(self.card)
+        self._player.remove_cards(self._card)
         
         counter_event = {
             'attack_type': "counter",
-            'attacker': self.player, 
+            'attacker': self._player, 
             'defender': target, 
-            'card': self.card,
+            'card': self._card,
             'damage_amount': 2,
-            'can_not_counter': self.card.is_dark_extinction(),
+            'can_not_counter': self._card.is_dark_extinction(),
         }
-        self.game_engine.process_damage_timeline(counter_event, start_step=2)
-
-        self.game_engine.deck.recycle([self.card])
-        self.interface.send_message(f"Player {self.player.id} plays {self.card.name} to counter Player {target.id}.", broadcast=True)
+        self._game_engine.process_damage_timeline(counter_event, start_step=2)
+        self._interface.send_message(f"Player {self._player.get_id()} plays {self._card.get_name()} to counter Player {target.get_id()}.", broadcast=True)
 
         return True
 
 class HolyLightCardAction(CounterAction):
     def __init__(self, player, game_engine, attack_event, card):
         super().__init__(player, game_engine, attack_event)
-        self.card = card
+        self._card = card
 
     @property
     def name(self):
@@ -442,49 +403,45 @@ class HolyLightCardAction(CounterAction):
 
     def available(self):
         return (
-            self.card.is_holy_light()
+            self._card.is_holy_light()
         )
 
     def execute(self):
-        self.interface.send_message(f"\nPlayer {self.player.id} uses Holy Light", broadcast=True)
-        
-        self.player.hand.remove_card(self.card)
-        self.game_engine.deck.recycle([self.card])
+        self._interface.send_message(f"\nPlayer {self._player.get_id()} uses Holy Light", broadcast=True)
+        self._player.remove_cards(self._card)
         
         return True
 
 class MagicBulletCounterCardAction(CounterAction):
     def __init__(self, player, game_engine, attack_event, card):
         super().__init__(player, game_engine, attack_event)
-        self.card = card
+        self._card = card
 
     @property
     def name(self):
-        return f"Counter {self.card.card_id} {self.card.name}"
+        return f"Counter {self._card}"
     
     def available(self):
         return (
-            self.card.is_magic_bullet() and
-            self.attack_event['attack_type'] == "magic_bullet"
+            self._card.is_magic_bullet() and
+            self._attack_event['attack_type'] == "magic_bullet"
         )
     
     def execute(self):
-        self.interface.send_message(f"\nPlayer {self.player.id} is attempting a Magic Bullet Counter Action with {self.card.name}.", debug=True)
+        self._interface.send_message(f"\nPlayer {self._player.get_id()} is attempting a Magic Bullet Counter Action with {self._card.get_name()}.", debug=True)
         
-        target = self.game_engine.get_magic_bullet_target(self.player)
+        target = self._game_engine.get_magic_bullet_target(self._player)
         
-        self.player.hand.remove_card(self.card)
+        self._player.remove_cards(self._card)
 
         attack_event = {
             'attack_type': "magic_bullet",
-            'attacker': self.player, 
+            'attacker': self._player, 
             'defender': target, 
-            'card': self.card,
-            'damage_amount': self.attack_event['damage_amount'] + 1,
+            'card': self._card,
+            'damage_amount': self._attack_event['damage_amount'] + 1,
         }
-        self.game_engine.process_damage_timeline(attack_event, start_step=1)
-
-        self.game_engine.deck.recycle([self.card])
-        self.interface.send_message(f"Player {self.player.id} plays {self.card.name} to counter Player {target.id}.", broadcast=True)
+        self._game_engine.process_damage_timeline(attack_event, start_step=1)
+        self._interface.send_message(f"Player {self._player.get_id()} plays {self._card.get_name()} to counter Player {target.get_id()}.", broadcast=True)
         
         return True

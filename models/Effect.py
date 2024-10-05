@@ -4,10 +4,10 @@ from abc import ABC, abstractmethod
 
 class Effect:
     def __init__(self, source, target, game_engine):
-        self.source = source
-        self.target = target
-        self.game_engine = game_engine
-        self.interface = game_engine.interface
+        self._source = source
+        self._target = target
+        self._game_engine = game_engine
+        self._interface = game_engine.get_interface()
 
     @abstractmethod
     def apply(self):
@@ -24,7 +24,7 @@ class Effect:
 class BasicEffect(Effect):
     def __init__(self, source, target, game_engine, card):
         super().__init__(source, target, game_engine)
-        self.card = card
+        self._card = card
 
     @abstractmethod
     def apply(self):
@@ -41,56 +41,63 @@ class BasicEffect(Effect):
 class PoisonEffect(BasicEffect):
     def __init__(self, source, target, game_engine, card, amount=1):
         super().__init__(source, target, game_engine, card)
-        self.amount = amount
+        self._amount = amount
 
     def apply(self):
-        self.interface.send_message(f"Player {self.target.id} is poisoned by Player {self.source.id}.", debug=True)
-        self.target.effects.add_effect(self)
+        self._interface.send_message(f"Player {self._target.get_id()} is poisoned by Player {self._source.get_id()}.", debug=True)
+        self._target.add_effect(self)
 
     def execute(self):
-        self.interface.send_message(f"Applying PoisonEffect to Player {self.target.id} by Player {self.source.id}: {self.amount} damage.", broadcast=True)
+        self._interface.send_message(f"Processing PoisonEffect to Player {self._target.get_id()} by Player {self._source.get_id()}: {self._amount} damage.", broadcast=True)
 
         attack_event = {
             'attack_type': "magic",
-            'attacker': self.source, 
-            'defender': self.target, 
-            'card': self.card,
-            'damage_amount': self.amount,
+            'attacker': self._source,
+            'defender': self._target,
+            'card': self._card,
+            'damage_amount': self._amount,
         }
-        self.game_engine.process_damage_timeline(attack_event, start_step=3)
-        self.game_engine.deck.recycle([self.card])
-        self.target.effects.remove_effect(self)
+        self._game_engine.process_damage_timeline(attack_event, start_step=3)
+        self._game_engine.get_deck().recycle([self._card])
+        self._target.remove_effect(self)
 
     def __str__(self):
         return "Poison"
+    
+    def get_source(self):
+        return self._source
 
 class WeaknessEffect(BasicEffect):
     def apply(self):
-        self.interface.send_message(f"Player {self.target.id} is weakened by Player {self.source.id}.", debug=True)
-        self.target.effects.add_effect(self)
+        self._interface.send_message(f"Player {self._target.get_id()} is weakened by Player {self._source.get_id()}.", debug=True)
+        self._target.add_effect(self)
+        self._target.set_targetable_state(effect_type="weakness", value=False)
 
     def execute(self):
         """
         Returns True if the turn should continue, False if the turn should end.
         """
-        self.interface.send_message(f"Applying WeaknessEffect to Player {self.target.id} by Player {self.source.id}.", broadcast=True)
+        self._interface.send_message(f"Processing WeaknessEffect to Player {self._target.get_id()} by Player {self._source.get_id()}.", broadcast=True)
         
         valid_actions = ['skip turn', 'draw 3 cards']
-        action = self.interface.prompt_action_selection(valid_actions, player_id=self.target.id)
+        action = self._interface.prompt_action_selection(valid_actions, player_id=self._target.get_id())
         if action == 'skip turn':
-            self.target.effects.remove_effect(self)
-            self.game_engine.deck.recycle([self.card])
+            self._target.remove_effect(self)
+            self._game_engine.get_deck().recycle([self._card])
+            self._target.set_targetable_state(effect_type="weakness", value=True)
             return False
         elif action == 'draw 3 cards':
             attack_event = {
                 'attack_type': "draw",
-                'attacker': self.source, 
-                'defender': self.target,
+                'attacker': self._source, 
+                'defender': self._target,
                 'final_damage': 3,
             }
-            self.game_engine.process_damage_timeline(attack_event, start_step=6)
-            self.target.effects.remove_effect(self)
-            self.game_engine.deck.recycle([self.card])
+            self._game_engine.process_damage_timeline(attack_event, start_step=6)
+
+            self._target.remove_effect(self)
+            self._game_engine.get_deck().recycle([self._card])
+            self._target.set_targetable_state(effect_type="weakness", value=True)
             return True
 
     def __str__(self):
@@ -98,14 +105,15 @@ class WeaknessEffect(BasicEffect):
 
 class HolyShieldEffect(BasicEffect):
     def apply(self):
-        self.interface.send_message(f"Player {self.target.id} activates Holy Shield.", debug=True)
-        self.target.effects.add_effect(self)
+        self._interface.send_message(f"Player {self._target.get_id()} activates Holy Shield.", debug=True)
+        self._target.add_effect(self)
+        self._target.set_targetable_state(effect_type="holy_shield", value=False)
 
     def execute(self):
-        self.interface.send_message(f"Applying HolyShieldEffect to Player {self.target.id}.", broadcast=True)
-        self.target.effects.remove_effect(self)
-        self.game_engine.deck.recycle([self.card])
-
+        self._interface.send_message(f"Processing HolyShieldEffect to Player {self._target.get_id()}.", broadcast=True)
+        self._target.remove_effect(self)
+        self._game_engine.get_deck().recycle([self._card])
+        self._target.set_targetable_state(effect_type="holy_shield", value=True)
     def __str__(self):
         return "Holy Shield"
 
