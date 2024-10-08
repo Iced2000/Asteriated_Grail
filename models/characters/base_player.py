@@ -256,7 +256,7 @@ Heal: {self._heal}")
         discard_choice = self._interface.prompt_multiple_action_selection(self._hand.get_cards(), min_selections=excess_cards, 
                                                                             max_selections=excess_cards, player_id=self._id)
         self.remove_cards(discard_choice)
-        self._team.get_opposite_team().add_morale(-excess_cards)
+        self._team.add_morale(-excess_cards)
         self._interface.send_message(f"Player {self._id}'s hand size is now {self._hand.size()}.", debug=True)
 
     def can_draw_cards(self, num_cards):
