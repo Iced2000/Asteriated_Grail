@@ -229,8 +229,12 @@ class GameEngine:
             if attacker_team.can_add_jewel(gem_add=1):
                 attacker_team.add_jewel(gem_add=1)
                 self._interface.send_message(f"Attacker's team gains 1 Gem for a successful attack.", debug=True)
+            elif attacker_team.can_remove_jewel(crystal_remove=1):
+                attacker_team.remove_jewel(crystal_remove=1)
+                attacker_team.add_jewel(gem_add=1)
+                self._interface.send_message(f"Attacker's team loses 1 Crystal and gains 1 Gem for a successful attack.", debug=True)
             else:
-                self._interface.send_message("Attacker's team cannot gain a gem for a successful attack.", debug=True)
+                self._interface.send_message("Attacker's team cannot gain a gem or lose a crystal for a successful attack.", debug=True)
         elif attack_event.get('attack_type', 'attack') == 'counter':
             if attacker_team.can_add_jewel(crystal_add=1):
                 attacker_team.add_jewel(crystal_add=1)
