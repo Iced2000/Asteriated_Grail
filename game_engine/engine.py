@@ -226,11 +226,17 @@ class GameEngine:
         
         attacker_team = attack_event['attacker'].get_team()
         if attack_event.get('attack_type', 'attack') == 'attack':
-            attacker_team.add_jewel(gem_add=1)
-            self._interface.send_message(f"Attacker's team gains 1 Gem for a successful attack.", debug=True)
+            if attacker_team.can_add_jewel(gem_add=1):
+                attacker_team.add_jewel(gem_add=1)
+                self._interface.send_message(f"Attacker's team gains 1 Gem for a successful attack.", debug=True)
+            else:
+                self._interface.send_message("Attacker's team cannot gain a gem for a successful attack.", debug=True)
         elif attack_event.get('attack_type', 'attack') == 'counter':
-            attacker_team.add_jewel(crystal_add=1)
-            self._interface.send_message(f"Attacker's team gains 1 Crystal for a successful counterattack.", debug=True)
+            if attacker_team.can_add_jewel(crystal_add=1):
+                attacker_team.add_jewel(crystal_add=1)
+                self._interface.send_message(f"Attacker's team gains 1 Crystal for a successful counterattack.", debug=True)
+            else:
+                self._interface.send_message("Attacker's team cannot gain a crystal for a successful counterattack.", debug=True)
 
     # Game Logic
     def process_damage_timeline(self, attack_event, start_step=1):
