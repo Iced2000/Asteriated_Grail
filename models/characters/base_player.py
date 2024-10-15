@@ -3,13 +3,7 @@
 from timeline import GameTimeline, DamageTimeline
 from models import Jewel, PlayerHeal, PlayerHand, PlayerEffects
 from models.effect import PoisonEffect, WeaknessEffect
-from models.action import (
-    NoResponseAction, 
-    AttackCardAction, 
-    CounterCardAction, HolyLightCardAction, MagicBulletCounterCardAction, 
-    MagicBulletCardAction, MagicCardAction,
-    PurchaseAction, RefineAction, SynthesisAction
-)
+from factories.action_factory import ActionFactory
 
 class BasePlayer:
     def __init__(self, character_config):
@@ -19,6 +13,7 @@ class BasePlayer:
         self._deck = self._game_engine.get_deck()
         self._interface = self._game_engine.get_interface()
         self._event_manager = self._game_engine.get_event_manager()
+        self._action_factory = ActionFactory(player=self)
         
         self._heal = PlayerHeal()
         self._hand = PlayerHand()
@@ -102,7 +97,7 @@ class BasePlayer:
                 self._interface.send_message("No more available actions.", debug=True)
                 break
             else:
-                available_actions.append(NoResponseAction(player=self, game_engine=self._game_engine))
+                available_actions.extend(self._action_factory.create_no_response_action())
     
     def after_action(self, event):
         self._interface.send_message(f"Player {self._id} performed action: {event.data['action']}", debug=True)
@@ -129,30 +124,12 @@ class BasePlayer:
         self.add_cards(cards_drawn)
 
     def _get_available_actions(self):
-        """
-        Determines which actions are currently available to the player.
-        Returns a list of actions.
-        """
         available_actions = []
-        for action in [SynthesisAction(player=self, game_engine=self._game_engine), 
-                       PurchaseAction(player=self, game_engine=self._game_engine), 
-                       RefineAction(player=self, game_engine=self._game_engine)]:
-            if action.available():
-                available_actions.append(action)
-        
-        # Include card-based actions
-        for card in self._hand.get_cards():
-            if card.is_attack():
-                action = AttackCardAction(player=self, game_engine=self._game_engine, card=card)
-            elif card.is_magic_bullet():
-                action = MagicBulletCardAction(player=self, game_engine=self._game_engine, card=card)
-            elif card.is_magic():
-                action = MagicCardAction(player=self, game_engine=self._game_engine, card=card)
-            else:
-                raise Exception("Card is not an attack or magic card.")
 
-            if action.available():
-                available_actions.append(action)
+        available_actions.extend(self._action_factory.create_character_action())
+        for card in self._hand.get_cards():
+            available_actions.extend(self._action_factory.create_card_action(card))
+        available_actions.extend(self._action_factory.create_special_action())
 
         return available_actions
     
@@ -160,22 +137,10 @@ class BasePlayer:
         """
         Returns a list of valid counter cards based on the attack card.
         """
-        valid_counter_actions = [NoResponseAction(player=self, game_engine=self._game_engine)]
-
+        valid_counter_actions = []
+        valid_counter_actions.extend(self._action_factory.create_no_response_action())
         for card in self._hand.get_cards():
-            if card.is_attack():
-                if attack_event.get('can_not_counter', False):
-                    continue
-                action = CounterCardAction(player=self, game_engine=self._game_engine, attack_event=attack_event, card=card)
-            elif card.is_holy_light():
-                action = HolyLightCardAction(player=self, game_engine=self._game_engine, attack_event=attack_event, card=card)
-            elif card.is_magic():
-                action = MagicBulletCounterCardAction(player=self, game_engine=self._game_engine, attack_event=attack_event, card=card)
-            else:
-                raise Exception("Card is not an attack or magic card.")
-
-            if action.available():
-                valid_counter_actions.append(action)
+            valid_counter_actions.extend(self._action_factory.create_counter_card_action(attack_event, card))
         
         return valid_counter_actions
 

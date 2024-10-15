@@ -59,3 +59,11 @@ class NoResponseAction(BaseAction):
     
     def is_no_response(self):
         return True
+    
+class CardAction(ABC):
+    def __init__(self, card):
+        self._card = card
+
+    @property
+    def card(self):
+        return self._card

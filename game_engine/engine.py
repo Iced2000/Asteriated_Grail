@@ -4,12 +4,10 @@ from .event_manager import EventManager
 from views import LocalConsoleInterface, NetworkedConsoleInterface
 from models import Team, Deck
 from models.effect import HolyShieldEffect
-from models.action import (
-    NoResponseAction, 
-    CounterCardAction, HolyLightCardAction, MagicBulletCounterCardAction
-)
+from models.action import NoResponseAction
 from timeline import GameTimeline, DamageTimeline
 from factories import CharacterFactory
+from factories.action_factory import COUNTER_CARD_ACTIONS
 
 class GameEngine:
     def __init__(self, config):
@@ -152,7 +150,7 @@ class GameEngine:
         
         defender.show_hand()
         defender_action = self._interface.prompt_action_selection(valid_counter_actions, defender.get_id())
-        if isinstance(defender_action, (CounterCardAction, MagicBulletCounterCardAction, HolyLightCardAction)):
+        if isinstance(defender_action, tuple(COUNTER_CARD_ACTIONS)):
             attack_event['hit'] = False
             self._interface.send_message(f"[Step 2] {defender.get_id()} counters with {defender_action}.", broadcast=True)
             self._event_manager.emit("damage_timeline_step_2_miss", attack_event=attack_event)
