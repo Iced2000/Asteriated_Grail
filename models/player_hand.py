@@ -39,3 +39,7 @@ class PlayerHand:
     
     def get_cards(self):
         return self._cards
+    
+    def set_max_size(self, max_size):
+        self._max_size = max_size
+

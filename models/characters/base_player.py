@@ -118,10 +118,15 @@ class BasePlayer:
         if exploded:
             raise Exception("Player's initial hand exploded.")
 
-    def take_damage(self, amount, damage_type='attack'):
+    def take_damage(self, amount, damage_type='attack', **kwargs):
         self._interface.send_message(f"Player {self._id} takes {amount} {damage_type} damage.", debug=True)
         cards_drawn = self._deck.deal(amount)
-        self.add_cards(cards_drawn)
+        morale_penalty = self.add_cards(cards_drawn)
+        if 'event' in kwargs:
+            if kwargs['event'].get('max_morale_penalty', 100) < morale_penalty:
+                morale_penalty = kwargs['event'].get('max_morale_penalty', 100)
+            kwargs['event'].data['morale_penalty'] = morale_penalty
+        self._team.add_morale(-morale_penalty)
 
     def _get_available_actions(self):
         available_actions = []
@@ -199,11 +204,16 @@ Heal: {self._heal}")
         self._interface.send_message("--------------------------\n", player_id=self._id)
     
     def add_cards(self, cards):
+        """
+        Adds cards to the player's hand.
+        Returns the morale penalty for the player's team if the hand exploded.
+        """
         if not isinstance(cards, list):
             cards = [cards]
         hand_exploded = self._hand.add_cards(cards)
         if hand_exploded:
-            self.handle_exploding_hand()
+            return self._handle_exploding_hand()
+        return 0
 
     def remove_cards(self, cards, recycle=True, exhibition=True):
         if not isinstance(cards, list):
@@ -214,18 +224,48 @@ Heal: {self._heal}")
         if exhibition:
             self._interface.send_message(f"Player {self._id} discarded {cards} for exhibition.", broadcast=True)
 
-    def handle_exploding_hand(self):
+    def _handle_exploding_hand(self):
+        """
+        Handles the case where the player's hand exceeds the maximum size.
+        Discards excess cards.
+        Returns the morale penalty for the player's team.
+        """
         excess_cards = self._hand.size() - self._hand.get_max_size()
         self._interface.send_message(f"Player {self._id} has exceeded the hand limit by {excess_cards} card(s). Must discard down to {self._hand.get_max_size()} cards.", player_id=self._id)
 
         discard_choice = self._interface.prompt_multiple_action_selection(self._hand.get_cards(), min_selections=excess_cards, 
                                                                             max_selections=excess_cards, player_id=self._id)
         self.remove_cards(discard_choice)
-        self._team.add_morale(-excess_cards)
         self._interface.send_message(f"Player {self._id}'s hand size is now {self._hand.size()}.", debug=True)
+        
+        morale_penalty = excess_cards
+        return morale_penalty
 
     def can_draw_cards(self, num_cards):
         return self._hand.can_draw_cards(num_cards)
+    
+    def get_hand_size(self):
+        return self._hand.size()
+    
+    def set_hand_max_size(self, max_size):
+        """
+        Sets the maximum size of the player's hand.
+        Returns the morale penalty for the player's team if the hand exploded.
+        """
+        self._hand.set_max_size(max_size)
+        if self._hand.exploded():
+            return self._handle_exploding_hand()
+        return 0
+    
+    def get_hand_max_size(self):
+        return self._hand.get_max_size()
+    
+    def get_hand_cards(self):
+        return self._hand.get_cards()
+    
+    #TODO
+    # can discard same type of hand cards
+    # discard same type of hand cards
     
     # effects related
     def get_effects(self, effect_type=None):
@@ -241,6 +281,22 @@ Heal: {self._heal}")
     def _use_healing(self, amount):
         self._interface.send_message(f"Player {self._id} uses {amount} healing.", debug=True)
         self._heal.remove(amount)
+
+    def get_heal_amount(self):
+        return self._heal.get_amount()
+    
+    def add_heal(self, amount):
+        self._heal.add(amount)
+    
+    def remove_heal(self, amount):
+        self._heal.remove(amount)
+    
+    def get_heal_max_amount(self):
+        return self._heal.get_max_amount()
+    
+    def set_heal_max_amount(self, max_amount):
+        self._heal.set_max_amount(max_amount)
+        self._heal.set_amount(min(self._heal.get_amount(), max_amount))
     
     # jewel related
     def can_add_jewel(self, gem_add=0, crystal_add=0):

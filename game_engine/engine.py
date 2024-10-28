@@ -4,7 +4,6 @@ from .event_manager import EventManager
 from views import LocalConsoleInterface, NetworkedConsoleInterface
 from models import Team, Deck
 from models.effect import HolyShieldEffect
-from models.action import NoResponseAction
 from timeline import GameTimeline, DamageTimeline
 from factories import CharacterFactory
 from factories.action_factory import COUNTER_CARD_ACTIONS
@@ -157,7 +156,7 @@ class GameEngine:
             defender_action.execute()
             return False
         
-        elif isinstance(defender_action, NoResponseAction):
+        elif defender_action.is_no_response():
             defender_holy_shield_effect = defender.get_effects(HolyShieldEffect)
             if defender_holy_shield_effect:
                 attack_event['hit'] = False
@@ -196,7 +195,10 @@ class GameEngine:
         if attack_event['damage_amount'] <= 0:
             self._interface.send_message("[Step 4] No healing response needed.", debug=True)
             return
-        
+        if not attack_event.get('can_heal', True):
+            self._interface.send_message("[Step 4] Defender cannot heal.", debug=True)
+            return
+
         defender = attack_event['defender']
         damage = attack_event['damage_amount']
         self._interface.send_message(f"[Step 4] {defender.get_id()} has {damage} damage to respond to.", debug=True)
@@ -218,7 +220,7 @@ class GameEngine:
         final_damage = attack_event.get('final_damage', 0)
         if final_damage > 0:
             defender = attack_event['defender']
-            defender.take_damage(final_damage, damage_type=attack_event.get('attack_type', 'attack'))
+            defender.take_damage(final_damage, damage_type=attack_event.get('attack_type', 'attack'), event=event)
         else:
             self._interface.send_message("[Step 6] No actual damage to apply.", debug=True)
         

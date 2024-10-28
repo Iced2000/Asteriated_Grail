@@ -14,6 +14,15 @@ class PlayerHeal:
     def get_amount(self):
         return self._amount
     
+    def get_max_amount(self):
+        return self._max_amount
+    
+    def set_max_amount(self, max_amount):
+        self._max_amount = max_amount
+    
+    def set_amount(self, amount):
+        self._amount = amount
+
     def __str__(self):
         return f"{self._amount}/{self._max_amount}"
 
